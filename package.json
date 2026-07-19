@@ -1,0 +1,27 @@
+{
+  "name": "findfortune-stock-insight",
+  "version": "0.1.0",
+  "private": true,
+  "description": "台股查詢網站：月營收增長、近兩季季報、法說會/股東會資訊",
+  "scripts": {
+    "dev": "WATCHPACK_POLLING=true next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "notify:scan": "bash scripts/notify-scan.sh"
+  },
+  "dependencies": {
+    "lightweight-charts": "^5.2.0",
+    "next": "^14.2.35",
+    "nodemailer": "^9.0.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "20.14.10",
+    "@types/nodemailer": "^8.0.1",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "typescript": "5.5.3"
+  }
+}
