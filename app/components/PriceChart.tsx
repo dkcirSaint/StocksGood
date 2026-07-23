@@ -306,48 +306,49 @@ export default function PriceChart({ data }: { data: DailyPrice[] }) {
         <div className="chart-ohlc" aria-live="polite">
           {hoverBar ? (
             <>
-              <span className="chart-ohlc-date">{hoverBar.date}</span>
-              <span className="chart-ohlc-item">
-                開{" "}
-                <strong className={hoverBar.close >= hoverBar.open ? "up" : "down"}>
-                  {formatPrice(hoverBar.open)}
-                </strong>
-              </span>
-              <span className="chart-ohlc-item">
-                高 <strong className="up">{formatPrice(hoverBar.high)}</strong>
-              </span>
-              <span className="chart-ohlc-item">
-                低 <strong className="down">{formatPrice(hoverBar.low)}</strong>
-              </span>
-              <span className="chart-ohlc-item">
-                收{" "}
-                <strong className={hoverBar.close >= hoverBar.open ? "up" : "down"}>
-                  {formatPrice(hoverBar.close)}
-                </strong>
-              </span>
-              <span className="chart-ohlc-sep" aria-hidden>
-                |
-              </span>
-              <span className="chart-ohlc-item">
-                量 <strong>{formatVolume(hoverBar.volume)}</strong>
-              </span>
-              <span className="chart-ohlc-sep" aria-hidden>
-                |
-              </span>
-              <span className="chart-ohlc-item">
-                DIF{" "}
-                <strong style={{ color: DIF_COLOR }}>{formatMacd(hoverBar.dif)}</strong>
-              </span>
-              <span className="chart-ohlc-item">
-                DEA{" "}
-                <strong style={{ color: DEA_COLOR }}>{formatMacd(hoverBar.dea)}</strong>
-              </span>
-              <span className="chart-ohlc-item">
-                柱{" "}
-                <strong className={hoverBar.hist >= 0 ? "up" : "down"}>
-                  {formatMacd(hoverBar.hist)}
-                </strong>
-              </span>
+              <div className="chart-ohlc-row">
+                <span className="chart-ohlc-date">{hoverBar.date}</span>
+                <span className="chart-ohlc-item">
+                  開{" "}
+                  <strong className={hoverBar.close >= hoverBar.open ? "up" : "down"}>
+                    {formatPrice(hoverBar.open)}
+                  </strong>
+                </span>
+                <span className="chart-ohlc-item">
+                  高 <strong className="up">{formatPrice(hoverBar.high)}</strong>
+                </span>
+                <span className="chart-ohlc-item">
+                  低 <strong className="down">{formatPrice(hoverBar.low)}</strong>
+                </span>
+                <span className="chart-ohlc-item">
+                  收{" "}
+                  <strong className={hoverBar.close >= hoverBar.open ? "up" : "down"}>
+                    {formatPrice(hoverBar.close)}
+                  </strong>
+                </span>
+                <span className="chart-ohlc-sep" aria-hidden>
+                  |
+                </span>
+                <span className="chart-ohlc-item">
+                  量 <strong>{formatVolume(hoverBar.volume)}</strong>
+                </span>
+              </div>
+              <div className="chart-ohlc-row chart-ohlc-row--macd">
+                <span className="chart-ohlc-item">
+                  DIF{" "}
+                  <strong style={{ color: DIF_COLOR }}>{formatMacd(hoverBar.dif)}</strong>
+                </span>
+                <span className="chart-ohlc-item">
+                  DEA{" "}
+                  <strong style={{ color: DEA_COLOR }}>{formatMacd(hoverBar.dea)}</strong>
+                </span>
+                <span className="chart-ohlc-item">
+                  DIF-DEA{" "}
+                  <strong className={hoverBar.hist >= 0 ? "up" : "down"}>
+                    {formatMacd(hoverBar.hist)}
+                  </strong>
+                </span>
+              </div>
             </>
           ) : (
             <span className="chart-ohlc-hint">移動游標查看當日行情</span>
