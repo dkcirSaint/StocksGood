@@ -1,7 +1,10 @@
 "use client";
 
 import type { StockCalendarEvent } from "@/lib/types";
-import type { MacdAnalysis } from "@/lib/indicators";
+import {
+  type MacdAnalysis,
+  macdEntryExitStatusLabel,
+} from "@/lib/indicators";
 import {
   daysFromToday,
   eventKindClass,
@@ -9,6 +12,18 @@ import {
 } from "@/lib/calendar-event-utils";
 
 function MacdBlock({ analysis }: { analysis: MacdAnalysis | null }) {
+  const statusLabel = analysis
+    ? macdEntryExitStatusLabel(analysis.kind, analysis.status)
+    : null;
+  const statusClass =
+    analysis?.status === "confirmed"
+      ? "confirmed"
+      : analysis?.status === "watching"
+        ? "watching"
+        : analysis?.status === "expired"
+          ? "expired"
+          : null;
+
   return (
     <div className="insights-block insights-block--macd">
       <h3 className="insights-title">MACD 分析</h3>
@@ -53,16 +68,9 @@ function MacdBlock({ analysis }: { analysis: MacdAnalysis | null }) {
           <div className="insights-macd-layer">
             <span className="insights-macd-layer-label">進出場</span>
             <div className="insights-macd-layer-tags">
-              {analysis.status === "confirmed" && (
-                <span className="macd-status confirmed">已確認・可進場</span>
-              )}
-              {analysis.status === "watching" && (
-                <span className="macd-status watching">有效・待確認</span>
-              )}
-              {analysis.status === "expired" && (
-                <span className="macd-status expired">已失效</span>
-              )}
-              {analysis.status == null && (
+              {statusLabel && statusClass ? (
+                <span className={`macd-status ${statusClass}`}>{statusLabel}</span>
+              ) : (
                 <span className="analysis-neutral">—</span>
               )}
             </div>

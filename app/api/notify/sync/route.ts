@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getNotifyStatusSummary,
+  normalizeNotifyTo,
   readNotifyConfig,
   writeNotifyConfig,
   type NotifyStockItem,
@@ -28,6 +29,7 @@ export async function POST(req: NextRequest) {
     items?: unknown;
     events?: Partial<NotifyEventToggles>;
     scheduleTimes?: unknown;
+    notifyTo?: unknown;
   };
 
   const items: NotifyStockItem[] = [];
@@ -48,6 +50,17 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  if (obj.notifyTo !== undefined) {
+    const raw =
+      typeof obj.notifyTo === "string" ? obj.notifyTo.trim() : "";
+    if (raw && !normalizeNotifyTo(raw)) {
+      return NextResponse.json(
+        { error: "收件 Email 格式無效" },
+        { status: 400 }
+      );
+    }
+  }
+
   const syncedAt = new Date().toISOString();
   const config = await writeNotifyConfig({
     items: Array.isArray(obj.items) ? items : undefined,
@@ -65,6 +78,7 @@ export async function POST(req: NextRequest) {
       obj.scheduleTimes !== undefined
         ? (obj.scheduleTimes as string[])
         : undefined,
+    notifyTo: obj.notifyTo !== undefined ? (obj.notifyTo as string) : undefined,
   });
 
   return NextResponse.json({

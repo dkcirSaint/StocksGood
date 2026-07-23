@@ -14,7 +14,7 @@ export interface NotifyEventToggles {
   macdTactical: boolean;
   /** 第二層：結構（頂背離／底背離） */
   macdStructure: boolean;
-  /** 第三層：進出場（有效待確認／已確認可進場／已失效） */
+  /** 第三層：進出場（等金叉・可偏多進場・暫緩；等死叉・可減碼／出場・訊號取消） */
   macdEntry: boolean;
   calendar: boolean;
 }
@@ -25,6 +25,8 @@ export interface NotifyConfig {
   events: NotifyEventToggles;
   /** 每天定時掃描時刻（HH:mm，台灣時區），最多 3 組 */
   scheduleTimes: string[];
+  /** 被通知者 Email（優先於環境變數 NOTIFY_TO） */
+  notifyTo: string | null;
 }
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -44,10 +46,21 @@ const DEFAULT_EVENTS: NotifyEventToggles = {
 const DEFAULT_SCHEDULE_TIMES = ["22:03"];
 
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function asBool(v: unknown, fallback: boolean): boolean {
   if (typeof v === "boolean") return v;
   return fallback;
+}
+
+/** 正規化收件 Email；空字串視為未設定；格式無效回 null（呼叫端可決定是否拒絕） */
+export function normalizeNotifyTo(raw: unknown): string | null {
+  if (raw == null) return null;
+  if (typeof raw !== "string") return null;
+  const s = raw.trim();
+  if (!s) return null;
+  if (!EMAIL_RE.test(s)) return null;
+  return s;
 }
 
 /** 正規化 HH:mm；無效則回 null */
@@ -106,6 +119,7 @@ function normalizeEvents(raw: unknown): NotifyEventToggles {
 function normalizeConfig(raw: unknown): NotifyConfig {
   const obj = (raw && typeof raw === "object" ? raw : {}) as Partial<NotifyConfig> & {
     scheduleTimes?: unknown;
+    notifyTo?: unknown;
   };
   const items: NotifyStockItem[] = [];
   if (Array.isArray(obj.items)) {
@@ -131,6 +145,8 @@ function normalizeConfig(raw: unknown): NotifyConfig {
       obj.scheduleTimes !== undefined
         ? normalizeScheduleTimes(obj.scheduleTimes)
         : [...DEFAULT_SCHEDULE_TIMES],
+    notifyTo:
+      "notifyTo" in obj ? normalizeNotifyTo(obj.notifyTo) : null,
   };
 }
 
@@ -144,6 +160,7 @@ export async function readNotifyConfig(): Promise<NotifyConfig> {
       items: [],
       events: { ...DEFAULT_EVENTS },
       scheduleTimes: [...DEFAULT_SCHEDULE_TIMES],
+      notifyTo: null,
     };
   }
 }
@@ -163,6 +180,10 @@ export async function writeNotifyConfig(
       partial.scheduleTimes !== undefined
         ? normalizeScheduleTimes(partial.scheduleTimes)
         : current.scheduleTimes,
+    notifyTo:
+      partial.notifyTo !== undefined
+        ? normalizeNotifyTo(partial.notifyTo)
+        : current.notifyTo,
   };
   await fs.mkdir(DATA_DIR, { recursive: true });
   await fs.writeFile(CONFIG_PATH, JSON.stringify(next, null, 2), "utf8");
@@ -175,6 +196,7 @@ export function getNotifyStatusSummary(config: NotifyConfig) {
     syncedAt: config.syncedAt,
     events: config.events,
     scheduleTimes: config.scheduleTimes,
+    notifyTo: config.notifyTo,
     mailConfigured: isMailEnvConfigured(),
     notifyEnabled: process.env.NOTIFY_ENABLED !== "false",
   };

@@ -2,6 +2,7 @@ import { getDailyPrices } from "@/lib/finmind";
 import type { DailyPrice } from "@/lib/types";
 import {
   analyzeMacd,
+  macdEntryExitStatusLabel,
   type MacdAnalysis,
   type MacdDivergenceStatus,
   type MacdTacticalKind,
@@ -57,15 +58,11 @@ function tacticalLabel(t: Exclude<MacdTacticalKind, null>): string {
   }
 }
 
-function entryLabel(status: MacdDivergenceStatus): string {
-  switch (status) {
-    case "watching":
-      return "有效・待確認";
-    case "confirmed":
-      return "已確認・可進場";
-    case "expired":
-      return "已失效";
-  }
+function entryLabel(
+  kind: MacdAnalysis["kind"],
+  status: MacdDivergenceStatus
+): string {
+  return macdEntryExitStatusLabel(kind, status) ?? "—";
 }
 
 function pushMacdLayerEvents(
@@ -103,7 +100,7 @@ function pushMacdLayerEvents(
 
   if (config.events.macdEntry && analysis.status && analysis.kind) {
     const kindLabel = analysis.kind === "high" ? "頂背離" : "底背離";
-    const statusLabel = entryLabel(analysis.status);
+    const statusLabel = entryLabel(analysis.kind, analysis.status);
     events.push({
       key: `macd:entry:${item.stockId}:${barDate}:${analysis.status}:${analysis.kind}`,
       kind: "macd",

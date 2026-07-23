@@ -18,6 +18,7 @@ interface NotifyStatus {
   syncedAt: string | null;
   events: NotifyEventToggles;
   scheduleTimes?: string[];
+  notifyTo?: string | null;
   mailConfigured: boolean;
   notifyEnabled: boolean;
   serverAlive?: boolean;
@@ -79,6 +80,7 @@ export default function NotifySettings({
     "",
     "",
   ]);
+  const [notifyTo, setNotifyTo] = useState("");
 
   const applyFormFromServer = useCallback((data: NotifyStatus) => {
     if (data.events) {
@@ -91,6 +93,11 @@ export default function NotifySettings({
       });
     }
     setScheduleSlots(padScheduleSlots(data.scheduleTimes));
+    setNotifyTo(
+      typeof data.notifyTo === "string" && data.notifyTo.trim()
+        ? data.notifyTo.trim()
+        : ""
+    );
   }, []);
 
   const refresh = useCallback(
@@ -173,12 +180,19 @@ export default function NotifySettings({
       const res = await fetch("/api/notify/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items, events, scheduleTimes }),
+        body: JSON.stringify({
+          items,
+          events,
+          scheduleTimes,
+          notifyTo: notifyTo.trim(),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "同步失敗");
       setStatus(data);
       setScheduleSlots(padScheduleSlots(data.scheduleTimes));
+      if (typeof data.notifyTo === "string") setNotifyTo(data.notifyTo);
+      else if (data.notifyTo == null) setNotifyTo("");
       const timesLabel =
         Array.isArray(data.scheduleTimes) && data.scheduleTimes.length > 0
           ? data.scheduleTimes.join("、")
@@ -200,20 +214,31 @@ export default function NotifySettings({
     setError(null);
     try {
       const scheduleTimes = validateScheduleOrThrow();
+      const trimmedTo = notifyTo.trim();
+      if (trimmedTo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedTo)) {
+        throw new Error("收件 Email 格式無效");
+      }
       const res = await fetch("/api/notify/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ events, scheduleTimes }),
+        body: JSON.stringify({
+          events,
+          scheduleTimes,
+          notifyTo: trimmedTo,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "儲存失敗");
       setStatus(data);
       setScheduleSlots(padScheduleSlots(data.scheduleTimes));
+      if (typeof data.notifyTo === "string") setNotifyTo(data.notifyTo);
+      else if (data.notifyTo == null) setNotifyTo("");
       const timesLabel =
         Array.isArray(data.scheduleTimes) && data.scheduleTimes.length > 0
           ? data.scheduleTimes.join("、")
           : "無（不定時掃描）";
-      setMessage(`已儲存定時：${timesLabel}`);
+      const toLabel = data.notifyTo || "（沿用 .env）";
+      setMessage(`已儲存定時：${timesLabel}；收件 ${toLabel}`);
       try {
         const auto = await fetch("/api/notify/health", {
           method: "POST",
@@ -395,7 +420,35 @@ export default function NotifySettings({
               : "—"}
           </li>
           <li>上次到點掃描：{status?.lastCronStamp ?? "尚未執行"}</li>
+          <li>
+            收件信箱：
+            {status?.notifyTo ? (
+              <span className="notify-ok">{status.notifyTo}</span>
+            ) : (
+              <span className="notify-warn">未設定（將用 .env）</span>
+            )}
+          </li>
         </ul>
+
+        <fieldset className="notify-events">
+          <legend>被通知者 Email</legend>
+          <label className="notify-to-field">
+            <span>收件信箱</span>
+            <input
+              type="email"
+              className="notify-to-input"
+              value={notifyTo}
+              onChange={(e) => setNotifyTo(e.target.value)}
+              placeholder="you@example.com"
+              autoComplete="email"
+            />
+          </label>
+          <p className="notify-hint">
+            通知信會寄到此信箱。留空則改用環境變數{" "}
+            <code>NOTIFY_TO</code>，再沒有則用 <code>GMAIL_USER</code>
+            。按「儲存定時」或「同步目前追蹤清單」一併寫入。
+          </p>
+        </fieldset>
 
         <fieldset className="notify-events">
           <legend>伺服器自動啟動</legend>
@@ -494,7 +547,7 @@ export default function NotifySettings({
               checked={events.macdEntry}
               onChange={(e) => updateEvent("macdEntry", e.target.checked)}
             />
-            進出場：有效待確認／已確認可進場／已失效
+            進出場：等金叉・可偏多進場・暫緩；等死叉・可減碼／出場・訊號取消
           </label>
           <p className="notify-hint">勾選後請再按「同步目前追蹤清單」寫入伺服器。</p>
         </fieldset>
@@ -531,7 +584,8 @@ export default function NotifySettings({
 
         <p className="notify-hint">
           請在 `.env` 設定 `GMAIL_USER`、`GMAIL_APP_PASSWORD`（Google
-          應用程式密碼），可選 `NOTIFY_TO`、`NOTIFY_CRON_SECRET`。
+          應用程式密碼）。收件者可在上方「被通知者 Email」設定，或選填
+          <code>NOTIFY_TO</code>。
         </p>
       </section>
     </Modal>

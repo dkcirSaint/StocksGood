@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isMailEnvConfigured } from "@/lib/notify/config";
-import { sendNotifyEmail, getNotifyRecipient } from "@/lib/notify/mailer";
+import { sendNotifyEmail, resolveNotifyRecipient } from "@/lib/notify/mailer";
 import { taiwanTodayYmd } from "@/lib/calendar-event-utils";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +45,7 @@ export async function POST() {
 export async function GET() {
   return NextResponse.json({
     mailConfigured: isMailEnvConfigured(),
-    to: getNotifyRecipient() || null,
+    to: (await resolveNotifyRecipient()) || null,
     notifyEnabled: process.env.NOTIFY_ENABLED !== "false",
   });
 }

@@ -1,7 +1,17 @@
 import type { StockCalendarEvent, StockEventKind } from "./types";
 
+/** 台灣時區今日 YYYY-MM-DD（避免 Node／瀏覽器 toLocaleDateString 格式不一致造成 hydration 錯誤） */
 export function taiwanTodayYmd(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const y = parts.find((p) => p.type === "year")?.value ?? "0000";
+  const m = parts.find((p) => p.type === "month")?.value ?? "01";
+  const d = parts.find((p) => p.type === "day")?.value ?? "01";
+  return `${y}-${m}-${d}`;
 }
 
 export function addMonthsYmd(ymd: string, months: number): string {
@@ -21,10 +31,7 @@ export function parseYmd(s: string | null | undefined): string | null {
 
 /** 台灣時區的當前西元年 */
 export function taiwanCurrentYear(): number {
-  const ymd = new Date().toLocaleDateString("en-CA", {
-    timeZone: "Asia/Taipei",
-  });
-  return parseInt(ymd.slice(0, 4), 10);
+  return parseInt(taiwanTodayYmd().slice(0, 4), 10);
 }
 
 export function currentYearBounds(): { year: number; start: string; end: string } {

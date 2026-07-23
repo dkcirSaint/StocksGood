@@ -53,18 +53,33 @@ export default function DataAnalysisModal({
         </ul>
 
         <h5 className="analysis-subheading">第三層・進出場（確認交叉）</h5>
+        <p className="analysis-note">
+          底背離對應<strong>進場</strong>標籤；頂背離對應<strong>出場</strong>標籤。
+        </p>
         <ul className="analysis-rules">
           <li>
-            <span className="macd-status watching">有效・待確認</span>
-            背離成立且仍在有效區間，尚未出現 DIF/DEA 交叉（觀察中）
+            <span className="macd-status watching">等金叉</span>
+            底背離成立、尚未金叉：等待 DIF 上穿 DEA 後再考慮進場
           </li>
           <li>
-            <span className="macd-status confirmed">已確認・可進場</span>
-            自背離轉折點後已出現 DIF/DEA 交叉（頂背離死叉、底背離金叉），作為進場依據
+            <span className="macd-status confirmed">可偏多進場</span>
+            底背離後已出現金叉，可考慮偏多進場
           </li>
           <li>
-            <span className="macd-status expired">已失效</span>
-            DIF 已重新超越前一波峰／跌破前一波谷，背離前提被破壞
+            <span className="macd-status expired">暫緩</span>
+            底背離已失效，暫緩進場
+          </li>
+          <li>
+            <span className="macd-status watching">等死叉</span>
+            頂背離成立、尚未死叉：等待 DIF 下穿 DEA 後再考慮減碼／出場
+          </li>
+          <li>
+            <span className="macd-status confirmed">可減碼／出場</span>
+            頂背離後已出現死叉，可考慮減碼或出場
+          </li>
+          <li>
+            <span className="macd-status expired">訊號取消</span>
+            頂背離已失效，出場訊號取消
           </li>
         </ul>
       </section>

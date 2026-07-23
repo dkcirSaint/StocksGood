@@ -1211,7 +1211,9 @@ export default function Home() {
                 <li>股價與漲跌</li>
                 <li>融資使用率</li>
                 <li>關鍵價格（設定／檢視）</li>
-                <li>MACD 三層分析（戰術／結構／進出場）</li>
+                <li>
+                  MACD 三層分析（戰術／結構／進出場）；進出場標籤為短建議（等金叉、可偏多進場、暫緩；等死叉、可減碼／出場、訊號取消）
+                </li>
                 <li>大戶籌碼（集保股權分散）</li>
                 <li>即將到來的已公告事件</li>
                 <li>股東會、法人說明會</li>
@@ -1230,7 +1232,9 @@ export default function Home() {
             <li>
               <strong>通知</strong>
               ：可設定關鍵價格觸價、MACD 條件、行事曆事件等 Email
-              通知（需自行設定信箱環境）。
+              通知。被通知者信箱可在「通知」選單內設定；留空則依序使用環境變數{" "}
+              <code>NOTIFY_TO</code>、<code>GMAIL_USER</code>
+              （寄信帳號仍需自行設定 Gmail 環境變數）。
             </li>
           </ol>
 

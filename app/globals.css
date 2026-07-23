@@ -206,6 +206,32 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.notify-to-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.notify-to-input {
+  width: 100%;
+  max-width: 360px;
+  box-sizing: border-box;
+  background: var(--bg-soft);
+  border: 1px solid var(--card-border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.notify-to-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.18);
+}
+
 .site-header h1 {
   font-size: 26px;
   margin: 0;

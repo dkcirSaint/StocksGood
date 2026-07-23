@@ -79,6 +79,32 @@ export interface MacdAnalysis {
   pivotIndices?: [number, number];
 }
 
+/** 進出場狀態短標籤（底背離→進場、頂背離→出場） */
+export function macdEntryExitStatusLabel(
+  kind: MacdDivergenceKind | null,
+  status: MacdDivergenceStatus | null
+): string | null {
+  if (!kind || !status) return null;
+  if (kind === "low") {
+    switch (status) {
+      case "watching":
+        return "等金叉";
+      case "confirmed":
+        return "可偏多進場";
+      case "expired":
+        return "暫緩";
+    }
+  }
+  switch (status) {
+    case "watching":
+      return "等死叉";
+    case "confirmed":
+      return "可減碼／出場";
+    case "expired":
+      return "訊號取消";
+  }
+}
+
 /** @deprecated 使用 MacdAnalysis */
 export type MacdDivergenceAnalysis = MacdAnalysis;
 
