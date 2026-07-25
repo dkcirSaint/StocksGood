@@ -5,6 +5,7 @@ import {
   readNotifyConfig,
   writeNotifyConfig,
   type NotifyStockItem,
+  type NotifyEstPriceTarget,
   type NotifyEventToggles,
 } from "@/lib/notify/config";
 
@@ -40,12 +41,18 @@ export async function POST(req: NextRequest) {
       const stockId = String(it.stockId ?? "").trim();
       if (!stockId) continue;
       const stockName = String(it.stockName ?? "").trim() || stockId;
-      const keyPrices = Array.isArray(it.keyPrices)
-        ? it.keyPrices
-            .filter((n): n is number => typeof n === "number" && Number.isFinite(n) && n > 0)
-            .slice(0, 4)
+      const estPriceTargets: NotifyEstPriceTarget[] = Array.isArray(
+        it.estPriceTargets
+      )
+        ? it.estPriceTargets
+            .map((t) => ({
+              label: String((t as NotifyEstPriceTarget)?.label ?? "").trim(),
+              price: Number((t as NotifyEstPriceTarget)?.price),
+            }))
+            .filter((t) => t.label && Number.isFinite(t.price) && t.price > 0)
+            .slice(0, 6)
         : [];
-      items.push({ stockId, stockName, keyPrices });
+      items.push({ stockId, stockName, estPriceTargets });
       if (items.length >= MAX_STOCKS) break;
     }
   }

@@ -4,14 +4,16 @@ import { useEffect, useMemo, useState } from "react";
 import type { DailyPrice } from "@/lib/types";
 import type { WatchItem } from "@/lib/watchlists";
 import {
-  addKeyPrice,
-  collectWatchlistKeyPriceTouches,
-  formatKeyPrice,
-  getKeyPrices,
-  MAX_KEY_PRICES,
-  parsePriceInput,
-  removeKeyPrice,
-} from "@/lib/price-targets";
+  type EpsYearKind,
+  formatEstimatedEps,
+  getEstimatedEpsForYear,
+  parseEpsInput,
+  setEstimatedEps,
+} from "@/lib/estimated-eps";
+import {
+  collectWatchlistEstPriceTouches,
+  formatTargetPrice,
+} from "@/lib/estimated-price";
 import Modal from "./Modal";
 
 const TOUCH_JUMP_MS = 2500;
@@ -27,31 +29,40 @@ export default function StockPriceTargets({
   watchItems: WatchItem[];
   section?: "form" | "touches";
 }) {
-  const [priceInput, setPriceInput] = useState("");
-  const [saved, setSaved] = useState<number[]>([]);
+  const [epsYear, setEpsYear] = useState<EpsYearKind>("thisYear");
+  const [epsInput, setEpsInput] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [touchTick, setTouchTick] = useState(0);
   const [touchesOpen, setTouchesOpen] = useState(false);
   const [touchIndex, setTouchIndex] = useState(0);
 
   useEffect(() => {
-    setSaved(getKeyPrices(stockId));
-    setPriceInput("");
+    const saved = getEstimatedEpsForYear(stockId, epsYear);
+    setEpsInput(saved != null ? formatEstimatedEps(saved) : "");
     setMsg(null);
-  }, [stockId]);
+  }, [stockId, epsYear]);
 
   useEffect(() => {
-    const onPricesChanged = () => {
-      setSaved(getKeyPrices(stockId));
+    const onEstInputsChanged = (ev: Event) => {
+      // 預估 EPS 或本益比變動 → 重新計算預估股價觸價
       setTouchTick((t) => t + 1);
+      const detail = (ev as CustomEvent<{ stockId?: string }>).detail;
+      if (ev.type === "ff-estimated-eps-changed") {
+        if (detail?.stockId && detail.stockId !== stockId) return;
+        const saved = getEstimatedEpsForYear(stockId, epsYear);
+        setEpsInput(saved != null ? formatEstimatedEps(saved) : "");
+      }
     };
-    window.addEventListener("ff-key-prices-changed", onPricesChanged);
-    return () =>
-      window.removeEventListener("ff-key-prices-changed", onPricesChanged);
-  }, [stockId]);
+    window.addEventListener("ff-estimated-eps-changed", onEstInputsChanged);
+    window.addEventListener("ff-pe-band-changed", onEstInputsChanged);
+    return () => {
+      window.removeEventListener("ff-estimated-eps-changed", onEstInputsChanged);
+      window.removeEventListener("ff-pe-band-changed", onEstInputsChanged);
+    };
+  }, [stockId, epsYear]);
 
   const watchTouches = useMemo(
-    () => collectWatchlistKeyPriceTouches(watchItems, stockId, latestBar),
+    () => collectWatchlistEstPriceTouches(watchItems, stockId, latestBar),
     [watchItems, stockId, latestBar, touchTick]
   );
 
@@ -72,63 +83,31 @@ export default function StockPriceTargets({
     window.setTimeout(() => setMsg(null), 2500);
   }
 
-  function handleConfirm() {
-    const price = parsePriceInput(priceInput);
-    if (priceInput.trim() && price == null) {
-      flashMsg("請輸入有效價格");
+  function handleSaveEps() {
+    const eps = parseEpsInput(epsInput);
+    if (epsInput.trim() && eps == null) {
+      flashMsg("請輸入有效 EPS");
       return;
     }
-    if (price == null) {
-      flashMsg("請輸入關鍵價格");
+    if (eps == null) {
+      flashMsg("請輸入預估 EPS");
       return;
     }
 
-    const result = addKeyPrice(stockId, price);
+    const result = setEstimatedEps(stockId, epsYear, eps);
     if (!result.ok) {
-      if (result.reason === "full") {
-        window.alert("關鍵價格已滿，最多只能儲存 4 個不重複的價格");
-        return;
-      }
-      if (result.reason === "duplicate") {
-        flashMsg("此價格已存在");
-        return;
-      }
-      flashMsg("請輸入有效價格");
+      flashMsg("請輸入有效 EPS");
       return;
     }
 
-    setSaved(result.prices);
-    setPriceInput("");
-    flashMsg("已儲存");
-  }
-
-  function handleDelete() {
-    const price = parsePriceInput(priceInput);
-    if (priceInput.trim() && price == null) {
-      flashMsg("請輸入有效價格");
-      return;
-    }
-    if (price == null) {
-      flashMsg("請輸入要刪除的關鍵價格");
-      return;
-    }
-
-    const result = removeKeyPrice(stockId, price);
-    if (!result.ok) {
-      flashMsg("列表中無此價格");
-      return;
-    }
-
-    setSaved(result.prices);
-    setPriceInput("");
-    flashMsg("已刪除");
+    setEpsInput(formatEstimatedEps(eps));
   }
 
   if (section === "touches") {
     const emptyText =
       watchItems.length === 0
         ? "追蹤列表尚無股票"
-        : "追蹤列表中無股票觸及關鍵價格";
+        : "追蹤列表中無股票觸及預估股價";
     const hasTouches = watchTouches.length > 0;
     const activeTouch = hasTouches
       ? watchTouches[touchIndex % watchTouches.length]
@@ -156,9 +135,9 @@ export default function StockPriceTargets({
                   {activeTouch.stockId}
                 </span>
                 <span className="stock-target-touch-prices">
-                  {activeTouch.touchedPrices.map((p) => (
-                    <span key={p} className="stock-target-touch-item">
-                      {formatKeyPrice(p)}
+                  {activeTouch.touched.map((t) => (
+                    <span key={t.label} className="stock-target-touch-item">
+                      {t.label} {formatTargetPrice(t.price)}
                     </span>
                   ))}
                 </span>
@@ -183,9 +162,9 @@ export default function StockPriceTargets({
                     <span className="stock-target-touch-date">{row.barDate}</span>
                   )}
                   <span className="stock-target-touch-prices">
-                    {row.touchedPrices.map((p) => (
-                      <span key={p} className="stock-target-touch-item">
-                        {formatKeyPrice(p)}
+                    {row.touched.map((t) => (
+                      <span key={t.label} className="stock-target-touch-item">
+                        {t.label} {formatTargetPrice(t.price)}
                       </span>
                     ))}
                   </span>
@@ -204,41 +183,37 @@ export default function StockPriceTargets({
     <div className="stock-targets-setting">
       <div className="stock-targets-form">
         <label className="stock-target-field">
-          <span className="stock-target-label">
-            關鍵價格
-            <span className="stock-target-cap">
-              {saved.length}/{MAX_KEY_PRICES}
-            </span>
-          </span>
-          <input
-            type="text"
-            inputMode="decimal"
-            className="stock-target-input"
-            value={priceInput}
-            onChange={(e) => setPriceInput(e.target.value)}
-            placeholder="—"
-          />
+          <span className="stock-target-label">預估EPS</span>
+          <div className="stock-target-eps-row">
+            <select
+              className="stock-target-year"
+              value={epsYear}
+              onChange={(e) => setEpsYear(e.target.value as EpsYearKind)}
+              aria-label="預估 EPS 年度"
+            >
+              <option value="thisYear">今年</option>
+              <option value="nextYear">明年</option>
+            </select>
+            <input
+              type="text"
+              inputMode="decimal"
+              className="stock-target-input"
+              value={epsInput}
+              onChange={(e) => setEpsInput(e.target.value)}
+              placeholder="—"
+              aria-label="預估 EPS"
+            />
+            <button
+              type="button"
+              className="stock-target-icon-btn add"
+              onClick={handleSaveEps}
+              title="儲存預估 EPS"
+              aria-label="儲存預估 EPS"
+            >
+              <span aria-hidden>+</span>
+            </button>
+          </div>
         </label>
-        <div className="stock-targets-actions">
-          <button
-            type="button"
-            className="stock-target-icon-btn add"
-            onClick={handleConfirm}
-            title="新增關鍵價格"
-            aria-label="新增關鍵價格"
-          >
-            <span aria-hidden>+</span>
-          </button>
-          <button
-            type="button"
-            className="stock-target-icon-btn remove"
-            onClick={handleDelete}
-            title="刪除關鍵價格"
-            aria-label="刪除關鍵價格"
-          >
-            <span aria-hidden>−</span>
-          </button>
-        </div>
       </div>
       {msg && <p className="stock-target-msg">{msg}</p>}
     </div>

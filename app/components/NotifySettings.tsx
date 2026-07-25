@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import Modal from "./Modal";
 import type { Watchlist } from "@/lib/watchlists";
-import { getKeyPrices } from "@/lib/price-targets";
+import {
+  getEstPriceTargets,
+  type EstPriceTarget,
+} from "@/lib/estimated-price";
 
 interface NotifyEventToggles {
   touch: boolean;
@@ -164,7 +167,11 @@ export default function NotifySettings({
       const scheduleTimes = validateScheduleOrThrow();
       const map = new Map<
         string,
-        { stockId: string; stockName: string; keyPrices: number[] }
+        {
+          stockId: string;
+          stockName: string;
+          estPriceTargets: EstPriceTarget[];
+        }
       >();
       for (const list of lists) {
         for (const it of list.items) {
@@ -172,7 +179,7 @@ export default function NotifySettings({
           map.set(it.stockId, {
             stockId: it.stockId,
             stockName: it.stockName,
-            keyPrices: getKeyPrices(it.stockId),
+            estPriceTargets: getEstPriceTargets(it.stockId),
           });
         }
       }
@@ -511,7 +518,7 @@ export default function NotifySettings({
               checked={events.touch}
               onChange={(e) => updateEvent("touch", e.target.checked)}
             />
-            關鍵價格觸價
+            預估股價觸價
           </label>
           <label>
             <input

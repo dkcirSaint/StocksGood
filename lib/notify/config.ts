@@ -1,10 +1,17 @@
 import { promises as fs } from "fs";
 import path from "path";
 
+/** 預估股價目標：標籤（今年上緣／明年合理…）與價格 */
+export interface NotifyEstPriceTarget {
+  label: string;
+  price: number;
+}
+
 export interface NotifyStockItem {
   stockId: string;
   stockName: string;
-  keyPrices: number[];
+  /** 由預估 EPS × 本益比計算出的預估股價目標，供觸價判斷 */
+  estPriceTargets: NotifyEstPriceTarget[];
 }
 
 /** MACD 三層可分別開關；勾選的層任一觸發即通知 */
@@ -129,12 +136,19 @@ function normalizeConfig(raw: unknown): NotifyConfig {
       if (!stockId) continue;
       const stockName =
         String((it as NotifyStockItem).stockName ?? "").trim() || stockId;
-      const keyPrices = Array.isArray((it as NotifyStockItem).keyPrices)
-        ? (it as NotifyStockItem).keyPrices
-            .filter((n) => typeof n === "number" && Number.isFinite(n) && n > 0)
-            .slice(0, 4)
+      const rawTargets = (it as NotifyStockItem).estPriceTargets;
+      const estPriceTargets: NotifyEstPriceTarget[] = Array.isArray(rawTargets)
+        ? rawTargets
+            .map((t) => ({
+              label: String((t as NotifyEstPriceTarget)?.label ?? "").trim(),
+              price: Number((t as NotifyEstPriceTarget)?.price),
+            }))
+            .filter(
+              (t) => t.label && Number.isFinite(t.price) && t.price > 0
+            )
+            .slice(0, 6)
         : [];
-      items.push({ stockId, stockName, keyPrices });
+      items.push({ stockId, stockName, estPriceTargets });
     }
   }
   return {

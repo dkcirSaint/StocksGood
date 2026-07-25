@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Modal from "./Modal";
 import type { UseWatchlists } from "@/lib/watchlists";
-import { formatKeyPrice, getKeyPrices } from "@/lib/price-targets";
 
 type DialogType = "add" | "remove" | "edit" | null;
 
@@ -20,20 +19,11 @@ export default function WatchlistPanel({
   const [dialog, setDialog] = useState<DialogType>(null);
   const [nameInput, setNameInput] = useState("");
   const [stocksExpanded, setStocksExpanded] = useState(true);
-  const [, setPriceTick] = useState(0);
-
   const { lists, selectedId, selectedList, selectList } = wl;
 
   useEffect(() => {
     setStocksExpanded(true);
   }, [selectedId]);
-
-  useEffect(() => {
-    const onPricesChanged = () => setPriceTick((t) => t + 1);
-    window.addEventListener("ff-key-prices-changed", onPricesChanged);
-    return () =>
-      window.removeEventListener("ff-key-prices-changed", onPricesChanged);
-  }, []);
 
   function openAdd() {
     setNameInput("");
@@ -131,7 +121,6 @@ export default function WatchlistPanel({
               <div className="wl-items">
                 {selectedList.items.length > 0 ? (
                   selectedList.items.map((it) => {
-                    const keyPrices = getKeyPrices(it.stockId);
                     return (
                     <div className="wl-item" key={it.stockId}>
                       <button
@@ -141,11 +130,6 @@ export default function WatchlistPanel({
                       >
                         {it.stockName}
                         <span className="wl-item-code">{it.stockId}</span>
-                        {keyPrices.length > 0 && (
-                          <span className="wl-item-key-price">
-                            （{keyPrices.map(formatKeyPrice).join("、")}）
-                          </span>
-                        )}
                       </button>
                       <button
                         className="wl-item-remove"

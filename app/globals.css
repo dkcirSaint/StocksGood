@@ -345,16 +345,44 @@ body {
   gap: 18px;
 }
 
-/* 與左側大戶籌碼頂端／標題樣式對齊 */
-.panel-stock-right > .insights-panel--events-only {
-  padding: 22px;
+/* 即將到來＋MACD／融資使用率 同一列，高度對齊 */
+.stock-events-row {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  min-width: 0;
 }
 
-.panel-stock-right > .insights-panel--events-only .insights-title {
-  margin: 0 0 16px;
-  font-size: 17px;
+.stock-events-row > .insights-panel--events-only {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 18px;
+}
+
+.stock-events-row-side {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+}
+
+/* 即將到來標題改為框線左上角凹槽 */
+.stock-events-row > .insights-panel--events-only .insights-title {
+  position: absolute;
+  top: 0;
+  left: 12px;
+  transform: translateY(-50%);
+  margin: 0;
+  padding: 0 6px;
+  background: var(--bg);
+  font-size: 12px;
   font-weight: 600;
-  color: var(--text);
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  white-space: nowrap;
+  z-index: 1;
 }
 
 .panel-stock-right .display-block {
@@ -569,6 +597,14 @@ body {
   flex: 1 1 auto;
 }
 
+/* 上市／上櫃／興櫃：置於股票名稱（代號）與股價之間 */
+.stock-market-type {
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
 .stock-identity .price-block {
   flex: 0 0 auto;
   margin-left: auto;
@@ -578,15 +614,71 @@ body {
   min-width: 0;
   display: flex;
   align-items: stretch;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 10px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
   align-self: stretch;
+  /* 為框線凹槽標題預留上方空間 */
+  padding-top: 9px;
+}
+
+/* 依序：預估股價、本益比、預估EPS；各框依內容決定寬度。
+   預估股價靠左（對齊即將到來）；本益比＋預估EPS 靠右相鄰，
+   預估EPS 右緣對齊融資使用率，本益比右緣接著預估EPS 左緣 */
+/* 預估股價：本益比：預估EPS ≈ 5:3:2，填滿整列；
+   本益比以內容為最小寬度，確保 4 字元輸入格不被壓縮 */
+.stock-head-meta > .stock-est-price {
+  order: 1;
+  flex: 5 1 0;
+  min-width: 0;
+}
+
+.stock-head-meta > .stock-pe-valuation {
+  order: 2;
+  flex: 3 1 0;
+  min-width: min-content;
+}
+
+.stock-head-meta > .stock-targets-setting {
+  order: 3;
+  flex: 2 1 0;
+  min-width: 0;
+}
+
+/* 各資訊框左上角凹槽標題（統一樣式） */
+.stock-head .stock-head-box-title,
+.stock-head .stock-targets-setting .stock-target-label,
+:is(.stock-head, .stock-events-row-side) .insights-panel--macd-only .insights-title,
+:is(.stock-head, .stock-events-row-side) .stock-margin-usage-label {
+  position: absolute;
+  top: 0;
+  left: 8px;
+  transform: translateY(-50%);
+  margin: 0;
+  padding: 0 4px;
+  background: var(--bg);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.stock-head .stock-pe-valuation,
+.stock-head .stock-est-price,
+.stock-head .stock-targets-setting,
+:is(.stock-head, .stock-events-row-side) .insights-panel--macd-only,
+:is(.stock-head, .stock-events-row-side) .stock-margin-usage {
+  position: relative;
 }
 
 .stock-head-meta > .stock-targets-setting,
-.stock-head-meta > .stock-key-prices,
-.stock-head-meta > .insights-panel--macd-only,
-.stock-head-meta > .stock-margin-usage {
+.stock-head-meta > .stock-pe-valuation,
+.stock-head-meta > .stock-est-price {
   align-self: stretch;
 }
 
@@ -780,7 +872,7 @@ body {
   font-size: 14px;
 }
 
-/* 關鍵價格設定（個股股價右側，橫向緊湊） */
+/* 預估 EPS 設定（個股股價右側，橫向緊湊） */
 .stock-head .stock-targets-setting {
   flex: 0 1 auto;
   min-width: 0;
@@ -788,9 +880,10 @@ body {
   background: var(--bg-soft);
   border: 1px solid var(--card-border);
   border-radius: 10px;
-  padding: 6px 10px;
+  padding: 12px 10px 6px;
   display: flex;
   align-items: center;
+  justify-content: center;
   align-self: stretch;
 }
 
@@ -810,24 +903,45 @@ body {
   gap: 4px;
 }
 
-.stock-head .stock-targets-setting .stock-target-label {
-  font-size: 11px;
-  color: var(--text-dim);
+.stock-head .stock-targets-setting .stock-target-eps-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stock-head .stock-targets-setting .stock-target-year {
+  box-sizing: border-box;
+  width: 72px;
+  min-height: 32px;
+  height: 32px;
+  padding: 4px 6px;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.stock-head .stock-targets-setting .stock-target-year:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .stock-head .stock-targets-setting .stock-target-input {
-  width: 96px;
-  box-sizing: border-box;
+  width: 5ch;
+  box-sizing: content-box;
   min-height: 32px;
+  height: 32px;
   padding: 4px 8px;
   font-size: 14px;
 }
 
-.stock-head .stock-targets-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-bottom: 2px;
+.stock-head .stock-targets-setting .stock-target-eps-row .stock-target-icon-btn {
+  width: 22px;
+  height: 22px;
+  font-size: 15px;
+  border-width: 1px;
 }
 
 .stock-target-icon-btn {
@@ -848,26 +962,13 @@ body {
   flex-shrink: 0;
 }
 
-.stock-target-icon-btn.remove {
-  border-color: #f07178;
-  color: #f07178;
-}
-
 .stock-target-icon-btn.add:hover {
   background: rgba(79, 140, 255, 0.12);
-}
-
-.stock-target-icon-btn.remove:hover {
-  background: rgba(240, 113, 120, 0.12);
 }
 
 .stock-target-icon-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-}
-
-.stock-target-icon-btn.remove:focus-visible {
-  outline-color: #f07178;
 }
 
 .stock-head .stock-targets-setting .stock-target-msg {
@@ -1083,38 +1184,123 @@ body {
   white-space: nowrap;
 }
 
-.stock-head .stock-margin-usage {
+.stock-head .stock-pe-valuation {
+  align-self: stretch;
   display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  font-variant-numeric: tabular-nums;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   border: 1px solid var(--card-border);
   background: var(--bg-soft);
   border-radius: 10px;
-  padding: 6px 12px;
+  padding: 12px 10px 6px;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-.stock-head .stock-margin-usage-label {
+.stock-head .stock-pe-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.stock-head .stock-pe-field-label {
   font-size: 11px;
+  color: var(--text-dim);
+}
+
+.stock-head .stock-pe-input {
+  width: 4ch;
+  box-sizing: content-box;
+  min-height: 32px;
+  height: 32px;
+  padding: 4px 8px;
+  font-size: 14px;
+  text-align: center;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stock-head .stock-pe-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.stock-head .stock-est-price {
+  align-self: stretch;
+  display: grid;
+  grid-template-columns: auto repeat(3, 1fr);
+  align-content: center;
+  gap: 2px 10px;
+  border: 1px solid var(--card-border);
+  background: var(--bg-soft);
+  border-radius: 10px;
+  padding: 12px 10px 6px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.stock-head .stock-est-price-row {
+  display: contents;
+}
+
+.stock-head .stock-est-price-year {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-dim);
+  align-self: center;
+}
+
+.stock-head .stock-est-price-cell {
+  font-size: 13px;
+  text-align: center;
+  color: var(--text);
+}
+
+.stock-head .stock-est-price-head .stock-est-price-cell {
+  font-size: 10px;
   font-weight: 600;
   color: var(--text-dim);
 }
 
-.stock-head .stock-margin-usage-value {
-  font-size: 16px;
+.stock-head .stock-est-price-cell.num {
   font-weight: 700;
 }
 
-.stock-head .stock-margin-usage.tone-ok .stock-margin-usage-value {
+:is(.stock-head, .stock-events-row-side) .stock-margin-usage {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--card-border);
+  background: var(--bg-soft);
+  border-radius: 10px;
+  padding: 12px 10px 6px;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+:is(.stock-head, .stock-events-row-side) .stock-margin-usage-value {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+:is(.stock-head, .stock-events-row-side) .stock-margin-usage.tone-ok .stock-margin-usage-value {
   color: var(--accent);
 }
 
-.stock-head .stock-margin-usage.tone-warn .stock-margin-usage-value {
+:is(.stock-head, .stock-events-row-side) .stock-margin-usage.tone-warn .stock-margin-usage-value {
   color: var(--warn);
 }
 
-.stock-head .stock-margin-usage.tone-danger .stock-margin-usage-value {
+:is(.stock-head, .stock-events-row-side) .stock-margin-usage.tone-danger .stock-margin-usage-value {
   color: var(--up);
 }
 
@@ -1248,37 +1434,36 @@ body {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.stock-head .insights-panel--macd-only {
+:is(.stock-head, .stock-events-row-side) .insights-panel--macd-only {
   flex: 0 1 auto;
   max-width: 100%;
-  padding: 6px 12px;
+  padding: 12px 12px 6px;
   border-radius: 10px;
   background: var(--bg-soft);
 }
 
-.stock-head .insights-panel--macd-only .insights-title {
-  margin: 0 0 4px;
-  font-size: 11px;
-}
-
-.stock-head .insights-panel--macd-only .insights-muted {
+:is(.stock-head, .stock-events-row-side) .insights-panel--macd-only .insights-muted {
   margin: 0;
   font-size: 12px;
 }
 
-.stock-head .insights-panel--macd-only .insights-macd-layers {
-  flex-direction: row;
-  flex-wrap: wrap;
+:is(.stock-head, .stock-events-row-side) .insights-panel--macd-only .insights-macd-layers {
+  display: grid;
+  grid-template-columns: auto auto;
   align-items: center;
-  gap: 6px 12px;
+  gap: 6px 16px;
 }
 
-.stock-head .insights-panel--macd-only .insights-macd-layer {
+:is(.stock-head, .stock-events-row-side) .insights-panel--macd-only .insights-macd-layer {
   gap: 6px;
   min-height: 0;
 }
 
-.stock-head .insights-panel--macd-only .insights-macd-layer-label {
+:is(.stock-head, .stock-events-row-side) .insights-panel--macd-only .insights-macd-layer--entry {
+  grid-column: 1 / -1;
+}
+
+:is(.stock-head, .stock-events-row-side) .insights-panel--macd-only .insights-macd-layer-label {
   flex: 0 0 auto;
   font-size: 10px;
 }

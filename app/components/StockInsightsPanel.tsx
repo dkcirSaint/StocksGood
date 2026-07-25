@@ -65,7 +65,7 @@ function MacdBlock({ analysis }: { analysis: MacdAnalysis | null }) {
               )}
             </div>
           </div>
-          <div className="insights-macd-layer">
+          <div className="insights-macd-layer insights-macd-layer--entry">
             <span className="insights-macd-layer-label">進出場</span>
             <div className="insights-macd-layer-tags">
               {statusLabel && statusClass ? (

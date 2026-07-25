@@ -7,7 +7,6 @@ import {
   type MacdDivergenceStatus,
   type MacdTacticalKind,
 } from "@/lib/indicators";
-import { evaluateKeyPriceTouches } from "@/lib/price-targets";
 import { getWatchlistCalendarEvents } from "@/lib/stock-events";
 import { daysFromToday, taiwanTodayYmd } from "@/lib/calendar-event-utils";
 import { readNotifyConfig, taiwanNowHm, type NotifyConfig } from "./config";
@@ -180,16 +179,16 @@ async function collectEvents(
       if (!prices || prices.length === 0) continue;
       const latest = prices[prices.length - 1];
 
-      if (config.events.touch && item.keyPrices.length > 0) {
-        const touched = evaluateKeyPriceTouches(item.keyPrices, latest);
-        for (const p of touched) {
+      if (config.events.touch && item.estPriceTargets.length > 0) {
+        for (const target of item.estPriceTargets) {
+          if (target.price < latest.low || target.price > latest.high) continue;
           events.push({
-            key: `touch:${item.stockId}:${latest.date}:${p}`,
+            key: `touch:${item.stockId}:${latest.date}:${target.label}:${target.price}`,
             kind: "touch",
             stockId: item.stockId,
             stockName: item.stockName,
-            title: `關鍵價格觸價`,
-            detail: `${item.stockName}（${item.stockId}）${latest.date} 觸及 ${formatPrice(p)}（當日 ${formatPrice(latest.low)}–${formatPrice(latest.high)}）`,
+            title: `預估股價觸價`,
+            detail: `${item.stockName}（${item.stockId}）${latest.date} 觸及${target.label}預估股價 ${formatPrice(target.price)}（當日 ${formatPrice(latest.low)}–${formatPrice(latest.high)}）`,
           });
         }
       }

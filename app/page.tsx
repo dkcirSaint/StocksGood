@@ -48,7 +48,8 @@ import {
   taiwanTodayYmd,
 } from "@/lib/calendar-event-utils";
 import { analyzeMacd } from "@/lib/indicators";
-import { formatKeyPrice, getKeyPrices } from "@/lib/price-targets";
+import { getEstimatedEps } from "@/lib/estimated-eps";
+import { getPeBand, setPeBand as savePeBand } from "@/lib/pe-band";
 
 function formatMoney(n: number): string {
   // 以「億元」為單位呈現大數字
@@ -69,6 +70,26 @@ function formatMetric(key: string, value: number | null): string {
   if (value === null || Number.isNaN(value)) return "—";
   if (key === "EPS") return value.toFixed(2);
   return formatMoney(value);
+}
+
+/** FinMind 市場別 -> 顯示文字（上市／上櫃／興櫃） */
+function marketTypeLabel(type: string | null | undefined): string | null {
+  const t = type?.trim().toLowerCase();
+  if (!t) return null;
+  if (t === "twse") return "上市";
+  if (t === "tpex") return "上櫃";
+  return "興櫃";
+}
+
+/** 預估股價 = 預估 EPS × 本益比 */
+function formatEstPrice(eps: number | null, peStr: string): string {
+  const pe = Number(peStr.trim().replace(/,/g, ""));
+  if (eps == null || !Number.isFinite(eps) || !Number.isFinite(pe) || pe <= 0) {
+    return "—";
+  }
+  const price = eps * pe;
+  if (!Number.isFinite(price)) return "—";
+  return price.toLocaleString("zh-TW", { maximumFractionDigits: 1 });
 }
 
 function Pct({ value }: { value: number | null }) {
@@ -258,30 +279,18 @@ export default function Home() {
     useState<MarginMaintenanceSnapshot | null>(null);
   const [marginUsage, setMarginUsage] =
     useState<StockMarginUsageSnapshot | null>(null);
+  const [peBand, setPeBand] = useState({ lower: "", fair: "", upper: "" });
+  const [estEps, setEstEps] = useState<{
+    thisYear: number | null;
+    nextYear: number | null;
+  }>({ thisYear: null, nextYear: null });
   const [dataAnalysisOpen, setDataAnalysisOpen] = useState(false);
   const [notifyOpen, setNotifyOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [watchlistOpen, setWatchlistOpen] = useState(false);
   const [addToListOpen, setAddToListOpen] = useState(false);
-  const [keyPrices, setKeyPrices] = useState<number[]>([]);
   const wl = useWatchlists();
   const msgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    const stockId = result?.stock.stock_id;
-    if (!stockId) {
-      setKeyPrices([]);
-      return;
-    }
-    setKeyPrices(getKeyPrices(stockId));
-    const onChanged = (e: Event) => {
-      const detail = (e as CustomEvent<{ stockId?: string }>).detail;
-      if (detail?.stockId && detail.stockId !== stockId) return;
-      setKeyPrices(getKeyPrices(stockId));
-    };
-    window.addEventListener("ff-key-prices-changed", onChanged);
-    return () => window.removeEventListener("ff-key-prices-changed", onChanged);
-  }, [result?.stock.stock_id]);
 
   function persistResultToLocalCache(r: StockResult) {
     const stockId = r.stock.stock_id;
@@ -511,6 +520,49 @@ export default function Home() {
       }
     })();
     return () => ctrl.abort();
+  }, [result?.stock.stock_id]);
+
+  useEffect(() => {
+    const stockId = result?.stock.stock_id;
+    if (!stockId) {
+      setPeBand({ lower: "", fair: "", upper: "" });
+      return;
+    }
+    setPeBand(getPeBand(stockId));
+    const onBandChanged = (e: Event) => {
+      const detail = (e as CustomEvent<{ stockId?: string }>).detail;
+      if (detail?.stockId && detail.stockId !== stockId) return;
+      setPeBand(getPeBand(stockId));
+    };
+    window.addEventListener("ff-pe-band-changed", onBandChanged);
+    return () =>
+      window.removeEventListener("ff-pe-band-changed", onBandChanged);
+  }, [result?.stock.stock_id]);
+
+  function updatePeBand(field: "lower" | "fair" | "upper", value: string) {
+    setPeBand((prev) => {
+      const next = { ...prev, [field]: value };
+      const stockId = result?.stock.stock_id;
+      if (stockId) savePeBand(stockId, next);
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    const stockId = result?.stock.stock_id;
+    if (!stockId) {
+      setEstEps({ thisYear: null, nextYear: null });
+      return;
+    }
+    setEstEps(getEstimatedEps(stockId));
+    const onEpsChanged = (e: Event) => {
+      const detail = (e as CustomEvent<{ stockId?: string }>).detail;
+      if (detail?.stockId && detail.stockId !== stockId) return;
+      setEstEps(getEstimatedEps(stockId));
+    };
+    window.addEventListener("ff-estimated-eps-changed", onEpsChanged);
+    return () =>
+      window.removeEventListener("ff-estimated-eps-changed", onEpsChanged);
   }, [result?.stock.stock_id]);
 
   useEffect(() => {
@@ -960,6 +1012,11 @@ export default function Home() {
                       <span className="name">{result.stock.stock_name}</span>
                     </span>
                     <span className="code">{result.stock.stock_id}</span>
+                    {marketTypeLabel(result.stock.type) && (
+                      <span className="stock-market-type">
+                        {marketTypeLabel(result.stock.type)}
+                      </span>
+                    )}
                   </div>
                   {lastPrice && (
                     <span
@@ -984,42 +1041,90 @@ export default function Home() {
                   )}
                 </div>
                 <div className="stock-head-meta">
-                  {keyPrices.length > 0 && (
-                    <span className="stock-key-prices" title="關鍵價格">
-                      {keyPrices.map(formatKeyPrice).join("、")}
-                    </span>
-                  )}
+                  <div
+                    className="stock-pe-valuation"
+                    title="本益比（由使用者自行輸入）"
+                  >
+                    <span className="stock-head-box-title">本益比</span>
+                    <label className="stock-pe-field">
+                      <span className="stock-pe-field-label">下緣</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        className="stock-pe-input"
+                        value={peBand.lower}
+                        onChange={(e) => updatePeBand("lower", e.target.value)}
+                        placeholder="—"
+                        aria-label="本益比下緣"
+                      />
+                    </label>
+                    <label className="stock-pe-field">
+                      <span className="stock-pe-field-label">合理</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        className="stock-pe-input"
+                        value={peBand.fair}
+                        onChange={(e) => updatePeBand("fair", e.target.value)}
+                        placeholder="—"
+                        aria-label="本益比合理"
+                      />
+                    </label>
+                    <label className="stock-pe-field">
+                      <span className="stock-pe-field-label">上緣</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        className="stock-pe-input"
+                        value={peBand.upper}
+                        onChange={(e) => updatePeBand("upper", e.target.value)}
+                        placeholder="—"
+                        aria-label="本益比上緣"
+                      />
+                    </label>
+                  </div>
+                  <div
+                    className="stock-est-price"
+                    title="預估股價 = 預估 EPS × 本益比"
+                  >
+                    <span className="stock-head-box-title">預估股價</span>
+                    <div className="stock-est-price-row stock-est-price-head">
+                      <span className="stock-est-price-year" aria-hidden />
+                      <span className="stock-est-price-cell">下緣</span>
+                      <span className="stock-est-price-cell">合理</span>
+                      <span className="stock-est-price-cell">上緣</span>
+                    </div>
+                    <div className="stock-est-price-row">
+                      <span className="stock-est-price-year">今年</span>
+                      <span className="stock-est-price-cell num">
+                        {formatEstPrice(estEps.thisYear, peBand.lower)}
+                      </span>
+                      <span className="stock-est-price-cell num">
+                        {formatEstPrice(estEps.thisYear, peBand.fair)}
+                      </span>
+                      <span className="stock-est-price-cell num">
+                        {formatEstPrice(estEps.thisYear, peBand.upper)}
+                      </span>
+                    </div>
+                    <div className="stock-est-price-row">
+                      <span className="stock-est-price-year">明年</span>
+                      <span className="stock-est-price-cell num">
+                        {formatEstPrice(estEps.nextYear, peBand.lower)}
+                      </span>
+                      <span className="stock-est-price-cell num">
+                        {formatEstPrice(estEps.nextYear, peBand.fair)}
+                      </span>
+                      <span className="stock-est-price-cell num">
+                        {formatEstPrice(estEps.nextYear, peBand.upper)}
+                      </span>
+                    </div>
+                  </div>
                   <StockPriceTargets
                     section="form"
                     stockId={result.stock.stock_id}
                     latestBar={lastPrice}
                     watchItems={watchItemsForTouches}
                   />
-                  <StockInsightsPanel
-                    section="macd"
-                    events={[]}
-                    eventsLoading={false}
-                    analysis={macdAnalysis}
-                  />
-                  {marginUsage && (
-                    <span
-                      className={`stock-margin-usage tone-${
-                        marginUsage.rate >= 80
-                          ? "danger"
-                          : marginUsage.rate >= 60
-                            ? "warn"
-                            : "ok"
-                      }`}
-                      title={`融資使用率（${marginUsage.date}）· 餘額 ${marginUsage.balance.toLocaleString("zh-TW")}／限額 ${marginUsage.limit.toLocaleString("zh-TW")} 張`}
-                    >
-                      <span className="stock-margin-usage-label">
-                        融資使用率
-                      </span>
-                      <span className="stock-margin-usage-value">
-                        {marginUsage.rate.toFixed(2)}%
-                      </span>
-                    </span>
-                  )}
                 </div>
               </div>
             )}
@@ -1107,12 +1212,41 @@ export default function Home() {
               <div className="panel-stock-right">
                 {result && (
                   <>
-                    <StockInsightsPanel
-                      section="events"
-                      events={upcomingStockEvents}
-                      eventsLoading={false}
-                      analysis={null}
-                    />
+                    <div className="stock-events-row">
+                      <StockInsightsPanel
+                        section="events"
+                        events={upcomingStockEvents}
+                        eventsLoading={false}
+                        analysis={null}
+                      />
+                      <div className="stock-events-row-side">
+                        <StockInsightsPanel
+                          section="macd"
+                          events={[]}
+                          eventsLoading={false}
+                          analysis={macdAnalysis}
+                        />
+                        {marginUsage && (
+                          <span
+                            className={`stock-margin-usage tone-${
+                              marginUsage.rate >= 80
+                                ? "danger"
+                                : marginUsage.rate >= 60
+                                  ? "warn"
+                                  : "ok"
+                            }`}
+                            title={`融資使用率（${marginUsage.date}）· 餘額 ${marginUsage.balance.toLocaleString("zh-TW")}／限額 ${marginUsage.limit.toLocaleString("zh-TW")} 張`}
+                          >
+                            <span className="stock-margin-usage-label">
+                              融資使用率
+                            </span>
+                            <span className="stock-margin-usage-value">
+                              {marginUsage.rate.toFixed(2)}%
+                            </span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
 
                     <section className="col-right">
                       {addMsg && <div className="toast">{addMsg}</div>}
@@ -1189,7 +1323,7 @@ export default function Home() {
         <div className="about-modal">
           <p className="modal-text">
             <strong>荷包股股（StocksGood）</strong>{" "}
-            是台股查詢與追蹤工具，協助以名稱或代號快速查看個股與大盤資訊，並搭配追蹤列表、關鍵價格與通知，方便日常觀察。
+            是台股查詢與追蹤工具，協助以名稱或代號快速查看個股與大盤資訊，並搭配追蹤列表、預估股價與通知，方便日常觀察。
           </p>
           <p className="modal-text about-disclaimer">
             資料僅供研究參考，不構成投資建議。
@@ -1203,14 +1337,16 @@ export default function Home() {
             </li>
             <li>
               <strong>大盤資訊</strong>
-              ：顯示加權指數、融資維持率，以及追蹤列表的最近交易日觸價。
+              ：顯示加權指數、融資維持率，以及追蹤列表最近交易日觸及預估股價的彙整。
             </li>
             <li>
               <strong>個股資訊</strong>
               <ul className="about-sublist">
                 <li>股價與漲跌</li>
                 <li>融資使用率</li>
-                <li>關鍵價格（設定／檢視）</li>
+                <li>預估 EPS（今年／明年，自行輸入）</li>
+                <li>本益比區間（下緣／合理／上緣，自行輸入）</li>
+                <li>預估股價（預估 EPS × 本益比，自動換算今年／明年上緣・合理・下緣）</li>
                 <li>
                   MACD 三層分析（戰術／結構／進出場）；進出場標籤為短建議（等金叉、可偏多進場、暫緩；等死叉、可減碼／出場、訊號取消）
                 </li>
@@ -1223,7 +1359,7 @@ export default function Home() {
             </li>
             <li>
               <strong>追蹤列表</strong>
-              ：建立多個列表、加入／管理股票，並作為籌碼與觸價彙整來源。
+              ：建立多個列表、加入／管理股票，並作為籌碼與預估股價觸價彙整來源。
             </li>
             <li>
               <strong>數據分析</strong>
@@ -1231,7 +1367,7 @@ export default function Home() {
             </li>
             <li>
               <strong>通知</strong>
-              ：可設定關鍵價格觸價、MACD 條件、行事曆事件等 Email
+              ：可設定預估股價觸價（今年／明年上緣・合理・下緣）、MACD 條件、行事曆事件等 Email
               通知。被通知者信箱可在「通知」選單內設定；留空則依序使用環境變數{" "}
               <code>NOTIFY_TO</code>、<code>GMAIL_USER</code>
               （寄信帳號仍需自行設定 Gmail 環境變數）。
