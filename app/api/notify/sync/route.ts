@@ -7,11 +7,13 @@ import {
   type NotifyStockItem,
   type NotifyEstPriceTarget,
   type NotifyEventToggles,
+  type NotifyWatchList,
 } from "@/lib/notify/config";
 
 export const dynamic = "force-dynamic";
 
 const MAX_STOCKS = 30;
+const MAX_LISTS = 20;
 
 export async function GET() {
   const config = await readNotifyConfig();
@@ -28,6 +30,7 @@ export async function POST(req: NextRequest) {
 
   const obj = (body && typeof body === "object" ? body : {}) as {
     items?: unknown;
+    lists?: unknown;
     events?: Partial<NotifyEventToggles>;
     scheduleTimes?: unknown;
     notifyTo?: unknown;
@@ -57,6 +60,25 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const lists: NotifyWatchList[] = [];
+  if (Array.isArray(obj.lists)) {
+    for (const raw of obj.lists) {
+      if (!raw || typeof raw !== "object") continue;
+      const it = raw as Partial<NotifyWatchList>;
+      const id = String(it.id ?? "").trim();
+      const name = String(it.name ?? "").trim();
+      if (!id || !name) continue;
+      const stockIds = Array.isArray(it.stockIds)
+        ? it.stockIds
+            .map((s) => String(s ?? "").trim())
+            .filter(Boolean)
+            .filter((s, i, arr) => arr.indexOf(s) === i)
+        : [];
+      lists.push({ id, name, stockIds });
+      if (lists.length >= MAX_LISTS) break;
+    }
+  }
+
   if (obj.notifyTo !== undefined) {
     const raw =
       typeof obj.notifyTo === "string" ? obj.notifyTo.trim() : "";
@@ -69,9 +91,12 @@ export async function POST(req: NextRequest) {
   }
 
   const syncedAt = new Date().toISOString();
+  const touchItemsOrLists =
+    Array.isArray(obj.items) || Array.isArray(obj.lists);
   const config = await writeNotifyConfig({
     items: Array.isArray(obj.items) ? items : undefined,
-    syncedAt: Array.isArray(obj.items) ? syncedAt : undefined,
+    lists: Array.isArray(obj.lists) ? lists : undefined,
+    syncedAt: touchItemsOrLists ? syncedAt : undefined,
     events: obj.events
       ? {
           touch: obj.events.touch !== false,

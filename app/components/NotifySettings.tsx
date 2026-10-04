@@ -184,11 +184,17 @@ export default function NotifySettings({
         }
       }
       const items = Array.from(map.values()).slice(0, 30);
+      const notifyLists = lists.map((l) => ({
+        id: l.id,
+        name: l.name,
+        stockIds: l.items.map((it) => it.stockId),
+      }));
       const res = await fetch("/api/notify/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           items,
+          lists: notifyLists,
           events,
           scheduleTimes,
           notifyTo: notifyTo.trim(),
@@ -518,7 +524,7 @@ export default function NotifySettings({
               checked={events.touch}
               onChange={(e) => updateEvent("touch", e.target.checked)}
             />
-            預估股價觸價
+            觸價通知（收盤價落在今年／明年上緣・合理・下緣區間）
           </label>
           <label>
             <input

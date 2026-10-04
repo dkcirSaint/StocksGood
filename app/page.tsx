@@ -34,8 +34,16 @@ import {
   getChipSnapshotsFromCache,
   saveChipCacheFromFetch,
 } from "@/lib/chip-cache";
+import {
+  getMarginUsageCache,
+  mergeMarginUsagePoints,
+  saveMarginUsageCache,
+} from "@/lib/margin-usage-cache";
+import { purgeUnwatchedLocalData } from "@/lib/local-cache";
 import { useWatchlists, isStockWatched, findWatchedStockByQuery } from "@/lib/watchlists";
 import ChipPanel from "./components/ChipPanel";
+import StockMemo from "./components/StockMemo";
+import NewsModal from "./components/NewsModal";
 import StockInsightsPanel from "./components/StockInsightsPanel";
 import StockPriceTargets from "./components/StockPriceTargets";
 import DisplayBlock from "./components/DisplayBlock";
@@ -50,6 +58,7 @@ import {
 import { analyzeMacd } from "@/lib/indicators";
 import { getEstimatedEps } from "@/lib/estimated-eps";
 import { getPeBand, setPeBand as savePeBand } from "@/lib/pe-band";
+import { getEstPriceTargets } from "@/lib/estimated-price";
 
 function formatMoney(n: number): string {
   // 以「億元」為單位呈現大數字
@@ -103,6 +112,116 @@ function Pct({ value }: { value: number | null }) {
       {pct}%
     </span>
   );
+}
+
+/** 重新抓取單檔的價格＋財報（增量）並寫入本地快取 */
+async function refreshStockCaches(stockId: string) {
+  const localCache = getFinancialCacheForQuery(stockId);
+  const priceCache = getPriceCache(stockId);
+  const params = new URLSearchParams({ q: stockId });
+  if (localCache?.latestRevenueMonth)
+    params.set("revLatest", localCache.latestRevenueMonth);
+  if (localCache?.latestQuarterDate)
+    params.set("qLatest", localCache.latestQuarterDate);
+  if (priceCache?.latestDate) params.set("priceLatest", priceCache.latestDate);
+
+  let data: (StockApiResponse & { error?: string }) | null = null;
+  try {
+    const res = await fetch(`/api/stock?${params}`);
+    if (!res.ok) return;
+    data = (await res.json()) as StockApiResponse & { error?: string };
+  } catch {
+    return;
+  }
+  if (!data?.stock?.stock_id) return;
+  const id = data.stock.stock_id;
+
+  const cachedPrices =
+    getPriceCache(id)?.dailyPrices ?? priceCache?.dailyPrices ?? [];
+  const dailyPrices = data.dailyPrices
+    ? mergeDailyPrices(cachedPrices, data.dailyPrices)
+    : cachedPrices;
+  if (dailyPrices.length > 0) {
+    savePriceCache(id, {
+      stockName: data.stock.stock_name,
+      industryCategory: data.stock.industry_category,
+      type: data.stock.type,
+      dailyPrices,
+      latestDate: data.financialsMeta?.latestPriceDate ?? undefined,
+    });
+  }
+
+  const meta = data.financialsMeta;
+  if (meta?.latestRevenueMonth || meta?.latestQuarterDate) {
+    rememberStockAlias(data.stock.stock_name, id);
+    saveFinancialCache(id, {
+      monthlyRevenue: data.monthlyRevenue,
+      quarterlyReports: data.quarterlyReports,
+      latestRevenueMonth:
+        meta.latestRevenueMonth ??
+        localCache?.latestRevenueMonth ??
+        data.monthlyRevenue?.[0]?.yearMonth ??
+        "",
+      latestQuarterDate:
+        meta.latestQuarterDate ??
+        localCache?.latestQuarterDate ??
+        data.quarterlyReports?.[0]?.date ??
+        "",
+    });
+  }
+}
+
+/** 重新抓取單檔最新股價（增量）並寫入本地快取（輕量，不含財報/MOPS） */
+async function refreshStockPriceCache(stockId: string) {
+  const cache = getPriceCache(stockId);
+  const params = new URLSearchParams({ id: stockId });
+  if (cache?.latestDate) params.set("priceLatest", cache.latestDate);
+  try {
+    const res = await fetch(`/api/price?${params.toString()}`);
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      stock?: {
+        stock_id: string;
+        stock_name: string;
+        industry_category: string;
+        type: string;
+      };
+      dailyPrices?: DailyPrice[];
+      latestPriceDate?: string | null;
+    };
+    if (!data?.stock || !data.dailyPrices?.length) return;
+    const merged = mergeDailyPrices(cache?.dailyPrices ?? [], data.dailyPrices);
+    savePriceCache(stockId, {
+      stockName: data.stock.stock_name,
+      industryCategory: data.stock.industry_category,
+      type: data.stock.type,
+      dailyPrices: merged,
+      latestDate: data.latestPriceDate ?? undefined,
+    });
+  } catch {
+    /* 忽略單檔價格更新失敗 */
+  }
+}
+
+/** 重新抓取單檔融資使用率走勢（增量）並寫入本地快取 */
+async function refreshMarginHistory(stockId: string) {
+  const cached = getMarginUsageCache(stockId);
+  const cachedPoints = cached?.points ?? [];
+  const lastDate = cachedPoints.length
+    ? cachedPoints[cachedPoints.length - 1].date
+    : "";
+  try {
+    const qs = new URLSearchParams({ stockId });
+    if (lastDate) qs.set("start", lastDate);
+    const res = await fetch(`/api/margin-usage-history?${qs.toString()}`);
+    if (!res.ok) return;
+    const json = await res.json();
+    const incoming = Array.isArray(json.points) ? json.points : [];
+    const merged = mergeMarginUsagePoints(cachedPoints, incoming);
+    saveMarginUsageCache(stockId, merged);
+  } catch {
+    /* 忽略單檔融資使用率更新失敗 */
+  }
 }
 
 function RevenueSection({ data }: { data: MonthlyRevenuePoint[] }) {
@@ -288,7 +407,9 @@ export default function Home() {
   const [notifyOpen, setNotifyOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [watchlistOpen, setWatchlistOpen] = useState(false);
+  const [newsOpen, setNewsOpen] = useState(false);
   const [addToListOpen, setAddToListOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const wl = useWatchlists();
   const msgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -838,6 +959,141 @@ export default function Home() {
     return items;
   }, [wl.lists]);
 
+  // 將目前追蹤清單（含由 EPS×本益比 算出的預估股價目標）與觀察列表結構
+  // 推送到伺服器 notify-config。空清單也要同步，才能清掉伺服器上已刪除的股票。
+  const syncNotifyTargets = useCallback(async () => {
+    const items = watchItemsForTouches.map((it) => ({
+      stockId: it.stockId,
+      stockName: it.stockName,
+      estPriceTargets: getEstPriceTargets(it.stockId),
+    }));
+    const lists = wl.lists.map((l) => ({
+      id: l.id,
+      name: l.name,
+      stockIds: l.items.map((it) => it.stockId),
+    }));
+    try {
+      await fetch("/api/notify/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items, lists }),
+      });
+    } catch {
+      /* 自動同步失敗時靜默，不影響前端操作 */
+    }
+  }, [watchItemsForTouches, wl.lists]);
+
+  // 追蹤列表變動時：清除本地孤兒資料，並把通知清單同步到伺服器
+  // （寄信掃描讀的是伺服器 notify-config，不是瀏覽器追蹤列表）
+  useEffect(() => {
+    if (!wl.ready) return;
+    purgeUnwatchedLocalData(watchItemsForTouches.map((i) => i.stockId));
+    const timer = setTimeout(() => void syncNotifyTargets(), 800);
+    return () => clearTimeout(timer);
+  }, [wl.ready, watchItemsForTouches, syncNotifyTargets]);
+
+  // 選項 C：輸入預估 EPS／本益比後，自動（防抖）同步觸價目標到伺服器
+  useEffect(() => {
+    if (!wl.ready) return;
+    const watchedIds = new Set(watchItemsForTouches.map((i) => i.stockId));
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onChange = (e: Event) => {
+      const detail = (e as CustomEvent<{ stockId?: string }>).detail;
+      // 僅追蹤清單內的股票才需要同步（其餘不會出現在通知中）
+      if (detail?.stockId && !watchedIds.has(detail.stockId)) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void syncNotifyTargets(), 1500);
+    };
+    window.addEventListener("ff-estimated-eps-changed", onChange);
+    window.addEventListener("ff-pe-band-changed", onChange);
+    return () => {
+      if (timer) clearTimeout(timer);
+      window.removeEventListener("ff-estimated-eps-changed", onChange);
+      window.removeEventListener("ff-pe-band-changed", onChange);
+    };
+  }, [wl.ready, watchItemsForTouches, syncNotifyTargets]);
+
+  // 「更新」：讀取所有追蹤股票的最新資料並更新本地端（silent 用於開啟時自動更新）
+  const refreshAllWatched = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true;
+    const items = watchItemsForTouches;
+    // 先清除孤兒資料，確保只保留追蹤列表內的股票
+    purgeUnwatchedLocalData(items.map((i) => i.stockId));
+    if (items.length === 0) {
+      if (!silent) flashMsg("追蹤列表為空，無資料可更新");
+      return;
+    }
+    setRefreshing(true);
+    try {
+      // 1) 大戶籌碼（批次）
+      try {
+        const params = new URLSearchParams({
+          ids: items.map((i) => i.stockId).join(","),
+          names: items.map((i) => `${i.stockId}:${i.stockName}`).join(","),
+        });
+        const res = await fetch(`/api/watchlist-chip?${params}`);
+        const data = await res.json();
+        if (data?.periods?.length) saveChipCacheFromFetch(data.periods);
+      } catch {
+        /* 忽略籌碼更新失敗 */
+      }
+
+      // 2) 逐檔更新價格＋財報與融資使用率走勢（增量）
+      for (const item of items) {
+        await refreshStockCaches(item.stockId);
+        await refreshMarginHistory(item.stockId);
+      }
+
+      // 3) 重新整理目前檢視中的個股畫面
+      if (result) await search(result.stock.stock_id);
+
+      if (!silent) flashMsg(`已更新 ${items.length} 檔最新資料`);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [watchItemsForTouches, result, search, flashMsg]);
+
+  // 輕量更新：只更新股價＋融資使用率（供頁面重整時自動觸發）
+  const refreshWatchedLight = useCallback(async () => {
+    const items = watchItemsForTouches;
+    purgeUnwatchedLocalData(items.map((i) => i.stockId));
+    if (items.length === 0) return;
+    setRefreshing(true);
+    try {
+      for (const item of items) {
+        await refreshStockPriceCache(item.stockId);
+        await refreshMarginHistory(item.stockId);
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  }, [watchItemsForTouches]);
+
+  // 開啟／重整頁面時：自動「輕量」更新股價＋融資使用率，
+  // 讓本地端與伺服器排程寄信所用的最新資料保持一致（另一半）。
+  // 時間節流：距上次自動更新未滿 1 小時就略過。
+  const didAutoRefresh = useRef(false);
+  useEffect(() => {
+    if (!wl.ready || didAutoRefresh.current) return;
+    if (watchItemsForTouches.length === 0) return;
+    didAutoRefresh.current = true;
+
+    const now = Date.now();
+    let last = 0;
+    try {
+      last = Number(window.localStorage.getItem("ff_last_auto_refresh")) || 0;
+    } catch {
+      /* ignore */
+    }
+    if (now - last < 60 * 60 * 1000) return; // 1 小時內不重複自動更新
+    try {
+      window.localStorage.setItem("ff_last_auto_refresh", String(now));
+    } catch {
+      /* ignore */
+    }
+    void refreshWatchedLight();
+  }, [wl.ready, watchItemsForTouches, refreshWatchedLight]);
+
   return (
     <main className="container">
       <div className="page-top">
@@ -851,6 +1107,23 @@ export default function Home() {
           </h1>
         </header>
         <nav className="feature-bar" aria-label="功能列">
+          <button
+            type="button"
+            className="feature-item"
+            onClick={() => void refreshAllWatched()}
+            disabled={refreshing}
+            title="讀取所有追蹤股票的最新資料並更新本地端"
+          >
+            {refreshing ? "更新中…" : "更新"}
+          </button>
+          <button
+            type="button"
+            className="feature-item"
+            onClick={() => setNewsOpen(true)}
+            title="「持股」列表內各股近 24 小時的新聞"
+          >
+            新聞
+          </button>
           <button
             type="button"
             className="feature-item"
@@ -1135,6 +1408,10 @@ export default function Home() {
               <aside className="panel-stock-left col-left">
                 {result && (
                   <>
+                    <StockMemo
+                      stockId={result.stock.stock_id}
+                      stockName={result.stock.stock_name}
+                    />
                     {wl.ready && (
                       <ChipPanel
                         snapshots={chipSnapshots}
@@ -1258,6 +1535,7 @@ export default function Home() {
                       ))}
 
                       <DisplayBlock
+                        stockId={result.stock.stock_id}
                         prices={result.dailyPrices}
                         meetingContent={meetingContent}
                         meetingLoading={meetingLoading}
@@ -1303,6 +1581,11 @@ export default function Home() {
       <DataAnalysisModal
         open={dataAnalysisOpen}
         onClose={() => setDataAnalysisOpen(false)}
+      />
+      <NewsModal
+        open={newsOpen}
+        onClose={() => setNewsOpen(false)}
+        lists={wl.lists}
       />
       <WatchlistSettings
         open={watchlistOpen}
@@ -1359,7 +1642,7 @@ export default function Home() {
             </li>
             <li>
               <strong>追蹤列表</strong>
-              ：建立多個列表、加入／管理股票，並作為籌碼與預估股價觸價彙整來源。
+              ：建立多個列表、加入／管理股票，並作為籌碼與觸價通知彙整來源。
             </li>
             <li>
               <strong>數據分析</strong>
@@ -1367,7 +1650,7 @@ export default function Home() {
             </li>
             <li>
               <strong>通知</strong>
-              ：可設定預估股價觸價（今年／明年上緣・合理・下緣）、MACD 條件、行事曆事件等 Email
+              ：可設定觸價通知（以最新收盤價判定落在今年／明年上緣・合理・下緣的哪一區間）、MACD 條件、行事曆事件等 Email
               通知。被通知者信箱可在「通知」選單內設定；留空則依序使用環境變數{" "}
               <code>NOTIFY_TO</code>、<code>GMAIL_USER</code>
               （寄信帳號仍需自行設定 Gmail 環境變數）。
@@ -1378,6 +1661,17 @@ export default function Home() {
           <p className="modal-text about-sources">
             FinMind、證交所／櫃買相關公開資料、公開資訊觀測站（MOPS）、集保
             TDCC 開放資料等。
+          </p>
+          <p className="modal-text about-sources">
+            圖表由{" "}
+            <a
+              href="https://www.tradingview.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              TradingView
+            </a>{" "}
+            Lightweight Charts™ 提供（Copyright © TradingView, Inc.）。
           </p>
         </div>
         <div className="modal-footer">

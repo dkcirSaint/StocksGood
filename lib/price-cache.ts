@@ -120,6 +120,34 @@ export function getPriceCacheForQuery(query: string): StockPriceCache | null {
   return stockId ? getPriceCache(stockId) : null;
 }
 
+/** 僅保留 keep 內股票的價格快取與別名，其餘刪除 */
+export function pruneToIds(keep: Set<string>) {
+  if (typeof window === "undefined") return;
+
+  const all = readAll();
+  let changed = false;
+  for (const id of Object.keys(all)) {
+    if (!keep.has(id)) {
+      delete all[id];
+      changed = true;
+    }
+  }
+  if (changed) writeAll(all);
+
+  // 別名：只保留指向被保留股票的項目
+  const aliases = readAliases();
+  let aliasChanged = false;
+  for (const [name, id] of Object.entries(aliases)) {
+    if (!keep.has(id)) {
+      delete aliases[name];
+      aliasChanged = true;
+    }
+  }
+  if (aliasChanged) {
+    window.localStorage.setItem(ALIAS_KEY, JSON.stringify(aliases));
+  }
+}
+
 export function savePriceCache(
   stockId: string,
   data: {

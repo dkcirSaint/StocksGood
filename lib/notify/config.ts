@@ -14,6 +14,13 @@ export interface NotifyStockItem {
   estPriceTargets: NotifyEstPriceTarget[];
 }
 
+/** 觀察列表（供信件依列表分類）；stockIds 對應 items */
+export interface NotifyWatchList {
+  id: string;
+  name: string;
+  stockIds: string[];
+}
+
 /** MACD 三層可分別開關；勾選的層任一觸發即通知 */
 export interface NotifyEventToggles {
   touch: boolean;
@@ -29,6 +36,8 @@ export interface NotifyEventToggles {
 export interface NotifyConfig {
   syncedAt: string | null;
   items: NotifyStockItem[];
+  /** 觀察列表順序與成員（與瀏覽器追蹤列表同步） */
+  lists: NotifyWatchList[];
   events: NotifyEventToggles;
   /** 每天定時掃描時刻（HH:mm，台灣時區），最多 3 組 */
   scheduleTimes: string[];
@@ -123,6 +132,26 @@ function normalizeEvents(raw: unknown): NotifyEventToggles {
   };
 }
 
+function normalizeLists(raw: unknown): NotifyWatchList[] {
+  if (!Array.isArray(raw)) return [];
+  const out: NotifyWatchList[] = [];
+  for (const it of raw) {
+    if (!it || typeof it !== "object") continue;
+    const row = it as Partial<NotifyWatchList>;
+    const id = String(row.id ?? "").trim();
+    const name = String(row.name ?? "").trim();
+    if (!id || !name) continue;
+    const stockIds = Array.isArray(row.stockIds)
+      ? row.stockIds
+          .map((s) => String(s ?? "").trim())
+          .filter(Boolean)
+          .filter((s, i, arr) => arr.indexOf(s) === i)
+      : [];
+    out.push({ id, name, stockIds });
+  }
+  return out;
+}
+
 function normalizeConfig(raw: unknown): NotifyConfig {
   const obj = (raw && typeof raw === "object" ? raw : {}) as Partial<NotifyConfig> & {
     scheduleTimes?: unknown;
@@ -154,6 +183,7 @@ function normalizeConfig(raw: unknown): NotifyConfig {
   return {
     syncedAt: typeof obj.syncedAt === "string" ? obj.syncedAt : null,
     items,
+    lists: normalizeLists(obj.lists),
     events: normalizeEvents(obj.events),
     scheduleTimes:
       obj.scheduleTimes !== undefined
@@ -172,6 +202,7 @@ export async function readNotifyConfig(): Promise<NotifyConfig> {
     return {
       syncedAt: null,
       items: [],
+      lists: [],
       events: { ...DEFAULT_EVENTS },
       scheduleTimes: [...DEFAULT_SCHEDULE_TIMES],
       notifyTo: null,
@@ -180,13 +211,20 @@ export async function readNotifyConfig(): Promise<NotifyConfig> {
 }
 
 export async function writeNotifyConfig(
-  partial: Partial<NotifyConfig> & { items?: NotifyStockItem[] }
+  partial: Partial<NotifyConfig> & {
+    items?: NotifyStockItem[];
+    lists?: NotifyWatchList[];
+  }
 ): Promise<NotifyConfig> {
   const current = await readNotifyConfig();
   const next: NotifyConfig = {
     syncedAt:
       partial.syncedAt !== undefined ? partial.syncedAt : current.syncedAt,
     items: partial.items !== undefined ? partial.items : current.items,
+    lists:
+      partial.lists !== undefined
+        ? normalizeLists(partial.lists)
+        : current.lists,
     events: partial.events
       ? normalizeEvents(partial.events)
       : current.events,

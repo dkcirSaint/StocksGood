@@ -1,17 +1,22 @@
 import type { StockCalendarEvent, StockEventKind } from "./types";
 
-/** 台灣時區今日 YYYY-MM-DD（避免 Node／瀏覽器 toLocaleDateString 格式不一致造成 hydration 錯誤） */
-export function taiwanTodayYmd(): string {
+/** 指定時間的台灣時區 YYYY-MM-DD（逐欄組裝，避免各地區 locale 輸出格式不一致） */
+export function taiwanYmdOf(date: Date): string {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Taipei",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).formatToParts(new Date());
+  }).formatToParts(date);
   const y = parts.find((p) => p.type === "year")?.value ?? "0000";
   const m = parts.find((p) => p.type === "month")?.value ?? "01";
   const d = parts.find((p) => p.type === "day")?.value ?? "01";
   return `${y}-${m}-${d}`;
+}
+
+/** 台灣時區今日 YYYY-MM-DD（避免 Node／瀏覽器 toLocaleDateString 格式不一致造成 hydration 錯誤） */
+export function taiwanTodayYmd(): string {
+  return taiwanYmdOf(new Date());
 }
 
 export function addMonthsYmd(ymd: string, months: number): string {

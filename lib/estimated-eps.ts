@@ -55,6 +55,20 @@ export function getEstimatedEps(stockId: string): StockEstimatedEps {
   return loadAll()[stockId] ?? emptyEps();
 }
 
+/** 僅保留 keep 內股票的預估 EPS，其餘刪除 */
+export function pruneToIds(keep: Set<string>) {
+  if (typeof window === "undefined") return;
+  const all = loadAll();
+  let changed = false;
+  for (const id of Object.keys(all)) {
+    if (!keep.has(id)) {
+      delete all[id];
+      changed = true;
+    }
+  }
+  if (changed) persistAll(all);
+}
+
 export function getEstimatedEpsForYear(
   stockId: string,
   year: EpsYearKind

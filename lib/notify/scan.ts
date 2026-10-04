@@ -9,7 +9,19 @@ import {
 } from "@/lib/indicators";
 import { getWatchlistCalendarEvents } from "@/lib/stock-events";
 import { daysFromToday, taiwanTodayYmd } from "@/lib/calendar-event-utils";
-import { readNotifyConfig, taiwanNowHm, type NotifyConfig } from "./config";
+import {
+  classifyZone,
+  refPriceForZone,
+  type EstPriceBand,
+  type EstZone,
+} from "@/lib/estimated-price";
+import {
+  readNotifyConfig,
+  taiwanNowHm,
+  type NotifyConfig,
+  type NotifyStockItem,
+  type NotifyWatchList,
+} from "./config";
 import { filterUnsentKeys, markKeysSent } from "./dedup";
 import { sendNotifyEmail } from "./mailer";
 
@@ -42,6 +54,47 @@ const REFRESH_CONCURRENCY = 3;
 
 function formatPrice(n: number): string {
   return n.toLocaleString("zh-TW", { maximumFractionDigits: 2 });
+}
+
+/** 區間對應的臨界價名稱 */
+function zoneBandWord(zone: EstZone): string {
+  if (zone === "低於下緣") return "下緣";
+  if (zone === "高於上緣") return "上緣";
+  return "合理";
+}
+
+/**
+ * 由 estPriceTargets（label 例如「今年下緣」「明年上緣」）重建每年度的
+ * 下緣・合理・上緣區間；缺任一線則該年度為 null。
+ */
+function reconstructBandsByYear(
+  targets: { label: string; price: number }[]
+): { 今年: EstPriceBand | null; 明年: EstPriceBand | null } {
+  const partial: Record<
+    "今年" | "明年",
+    { lower?: number; fair?: number; upper?: number }
+  > = { 今年: {}, 明年: {} };
+
+  for (const t of targets) {
+    for (const yearLabel of ["今年", "明年"] as const) {
+      if (!t.label.startsWith(yearLabel)) continue;
+      const bandLabel = t.label.slice(yearLabel.length);
+      if (bandLabel === "下緣") partial[yearLabel].lower = t.price;
+      else if (bandLabel === "合理") partial[yearLabel].fair = t.price;
+      else if (bandLabel === "上緣") partial[yearLabel].upper = t.price;
+    }
+  }
+
+  const finalize = (p: {
+    lower?: number;
+    fair?: number;
+    upper?: number;
+  }): EstPriceBand | null =>
+    p.lower != null && p.fair != null && p.upper != null
+      ? { lower: p.lower, fair: p.fair, upper: p.upper }
+      : null;
+
+  return { 今年: finalize(partial.今年), 明年: finalize(partial.明年) };
 }
 
 function tacticalLabel(t: Exclude<MacdTacticalKind, null>): string {
@@ -180,15 +233,27 @@ async function collectEvents(
       const latest = prices[prices.length - 1];
 
       if (config.events.touch && item.estPriceTargets.length > 0) {
-        for (const target of item.estPriceTargets) {
-          if (target.price < latest.low || target.price > latest.high) continue;
+        // 由 estPriceTargets 重建今年／明年的 下緣・合理・上緣 區間
+        const bandsByYear = reconstructBandsByYear(item.estPriceTargets);
+        for (const yearLabel of ["今年", "明年"] as const) {
+          const band = bandsByYear[yearLabel];
+          if (!band) continue;
+          const zone = classifyZone(
+            latest.close,
+            band.lower,
+            band.fair,
+            band.upper
+          );
+          if (!zone) continue;
+          const refPrice = refPriceForZone(zone, band);
+          const bandWord = zoneBandWord(zone);
           events.push({
-            key: `touch:${item.stockId}:${latest.date}:${target.label}:${target.price}`,
+            key: `touch:${item.stockId}:${latest.date}:${yearLabel}:${zone}`,
             kind: "touch",
             stockId: item.stockId,
             stockName: item.stockName,
-            title: `預估股價觸價`,
-            detail: `${item.stockName}（${item.stockId}）${latest.date} 觸及${target.label}預估股價 ${formatPrice(target.price)}（當日 ${formatPrice(latest.low)}–${formatPrice(latest.high)}）`,
+            title: `觸價通知`,
+            detail: `${item.stockName}（${item.stockId}）${yearLabel} 收盤 ${formatPrice(latest.close)}・${zone}（${bandWord} ${formatPrice(refPrice)}）・${latest.date}`,
           });
         }
       }
@@ -238,7 +303,58 @@ async function collectEvents(
   return { events, errors };
 }
 
-function buildEmailBody(today: string, events: NotifyEvent[]): string {
+/**
+ * 估值排序鍵：
+ * 1) 低於合理（close < fair，含低於下緣）差距（相對 fair）越大越前
+ * 2) 高於合理（close > fair，含高於上緣）差距越大越前
+ * 3) 無法判定者最後
+ */
+function valuationSortKey(
+  item: NotifyStockItem | undefined,
+  close: number | null
+): { side: number; gap: number } {
+  if (!item || close == null || !Number.isFinite(close)) {
+    return { side: 2, gap: 0 };
+  }
+  const bands = reconstructBandsByYear(item.estPriceTargets);
+  let bestBelow = -1;
+  let bestAbove = -1;
+  for (const yearLabel of ["今年", "明年"] as const) {
+    const band = bands[yearLabel];
+    if (!band || !(band.lower < band.fair && band.fair < band.upper)) continue;
+    if (close < band.fair) {
+      const gap = (band.fair - close) / band.fair;
+      if (gap > bestBelow) bestBelow = gap;
+    } else if (close > band.fair) {
+      const gap = (close - band.fair) / band.fair;
+      if (gap > bestAbove) bestAbove = gap;
+    }
+  }
+  if (bestBelow >= 0) return { side: 0, gap: bestBelow };
+  if (bestAbove >= 0) return { side: 1, gap: bestAbove };
+  return { side: 2, gap: 0 };
+}
+
+function compareValuation(
+  a: { side: number; gap: number },
+  b: { side: number; gap: number }
+): number {
+  if (a.side !== b.side) return a.side - b.side;
+  return b.gap - a.gap;
+}
+
+const EVENT_KIND_ORDER: Record<NotifyEventKind, number> = {
+  touch: 0,
+  macd: 1,
+  calendar: 2,
+};
+
+function buildEmailBody(
+  today: string,
+  events: NotifyEvent[],
+  config: NotifyConfig,
+  priceMap: Map<string, DailyPrice[]>
+): string {
   const scannedAt = new Date().toLocaleString("zh-TW", {
     timeZone: "Asia/Taipei",
     year: "numeric",
@@ -256,9 +372,90 @@ function buildEmailBody(today: string, events: NotifyEvent[]): string {
     `共 ${events.length} 則`,
     "",
   ];
-  events.forEach((ev, i) => {
-    lines.push(`${i + 1}. [${ev.title}] ${ev.detail}`);
-  });
+
+  const itemById = new Map(config.items.map((it) => [it.stockId, it]));
+  const eventsByStock = new Map<string, NotifyEvent[]>();
+  for (const ev of events) {
+    const list = eventsByStock.get(ev.stockId) ?? [];
+    list.push(ev);
+    eventsByStock.set(ev.stockId, list);
+  }
+  for (const list of eventsByStock.values()) {
+    list.sort(
+      (a, b) =>
+        (EVENT_KIND_ORDER[a.kind] ?? 9) - (EVENT_KIND_ORDER[b.kind] ?? 9) ||
+        a.title.localeCompare(b.title, "zh-Hant")
+    );
+  }
+
+  const closeOf = (stockId: string): number | null => {
+    const prices = priceMap.get(stockId);
+    if (!prices?.length) return null;
+    const c = prices[prices.length - 1]?.close;
+    return Number.isFinite(c) ? c : null;
+  };
+
+  const sortStockIds = (ids: string[]): string[] => {
+    return [...ids].sort((a, b) => {
+      const ka = valuationSortKey(itemById.get(a), closeOf(a));
+      const kb = valuationSortKey(itemById.get(b), closeOf(b));
+      const cmp = compareValuation(ka, kb);
+      if (cmp !== 0) return cmp;
+      const nameA = eventsByStock.get(a)?.[0]?.stockName ?? a;
+      const nameB = eventsByStock.get(b)?.[0]?.stockName ?? b;
+      return nameA.localeCompare(nameB, "zh-Hant") || a.localeCompare(b);
+    });
+  };
+
+  const lists: NotifyWatchList[] =
+    config.lists.length > 0
+      ? config.lists
+      : [
+          {
+            id: "_all",
+            name: "觀察清單",
+            stockIds: config.items.map((it) => it.stockId),
+          },
+        ];
+
+  const placed = new Set<string>();
+  let wroteAnySection = false;
+
+  const writeSection = (title: string, stockIds: string[]) => {
+    const withEvents = sortStockIds(
+      stockIds.filter((id) => (eventsByStock.get(id)?.length ?? 0) > 0)
+    );
+    if (withEvents.length === 0) return;
+    if (wroteAnySection) lines.push("");
+    lines.push(`【${title}】`);
+    withEvents.forEach((stockId, idx) => {
+      placed.add(stockId);
+      const stockEvents = eventsByStock.get(stockId)!;
+      const name = stockEvents[0]?.stockName ?? stockId;
+      lines.push(`${idx + 1}. ${name}（${stockId}）`);
+      for (const ev of stockEvents) {
+        lines.push(`   · [${ev.title}] ${ev.detail}`);
+      }
+    });
+    wroteAnySection = true;
+  };
+
+  for (const list of lists) {
+    writeSection(list.name, list.stockIds);
+  }
+
+  // 有事件但不在任何列表內的股票
+  const orphanIds = [...eventsByStock.keys()].filter((id) => !placed.has(id));
+  if (orphanIds.length > 0) {
+    writeSection("其他", orphanIds);
+  }
+
+  if (!wroteAnySection) {
+    events.forEach((ev, i) => {
+      lines.push(`${i + 1}. [${ev.title}] ${ev.detail}`);
+    });
+  }
+
   lines.push("", "—", "本信由荷包股股自動掃描寄出，僅供研究參考。");
   return lines.join("\n");
 }
@@ -306,7 +503,7 @@ export async function runNotifyScan(opts?: {
 
   const { to } = await sendNotifyEmail({
     subject: `[荷包股股] ${events.length} 則通知・${today} ${taiwanNowHm()}`,
-    text: buildEmailBody(today, events),
+    text: buildEmailBody(today, events, config, refresh.prices),
   });
 
   await markKeysSent(allKeys);

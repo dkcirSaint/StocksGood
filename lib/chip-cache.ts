@@ -137,6 +137,20 @@ export function saveChipCacheFromFetch(items: ChipPeriodFetchItem[]) {
   writeAll(all);
 }
 
+/** 僅保留 keep 內股票的籌碼快取，其餘刪除 */
+export function pruneToIds(keep: Set<string>) {
+  if (typeof window === "undefined") return;
+  const all = readAll();
+  let changed = false;
+  for (const id of Object.keys(all)) {
+    if (!keep.has(id)) {
+      delete all[id];
+      changed = true;
+    }
+  }
+  if (changed) writeAll(all);
+}
+
 export function getChipSnapshotsFromCache(
   items: { stockId: string; stockName: string }[]
 ): LargeHolderSnapshot[] {

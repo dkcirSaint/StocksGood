@@ -183,6 +183,14 @@ export interface StockMarginUsageSnapshot {
   source: "finmind" | "twse";
 }
 
+/** 融資使用率單日點位（供走勢圖使用） */
+export interface MarginUsagePoint {
+  /** YYYY-MM-DD */
+  date: string;
+  /** 融資使用率（%） */
+  rate: number;
+}
+
 /** 加權指數快照 */
 export interface MarketIndexSnapshot {
   name: string;

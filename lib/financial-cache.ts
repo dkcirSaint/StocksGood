@@ -67,6 +67,20 @@ export function getFinancialCache(
   return readAll()[stockId] ?? null;
 }
 
+/** 僅保留 keep 內股票的財報快取，其餘刪除（別名由 price-cache 統一清理） */
+export function pruneToIds(keep: Set<string>) {
+  if (typeof window === "undefined") return;
+  const all = readAll();
+  let changed = false;
+  for (const id of Object.keys(all)) {
+    if (!keep.has(id)) {
+      delete all[id];
+      changed = true;
+    }
+  }
+  if (changed) writeAll(all);
+}
+
 function trimRevenue(items: MonthlyRevenuePoint[]): MonthlyRevenuePoint[] {
   return items
     .slice()

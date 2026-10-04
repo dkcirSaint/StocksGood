@@ -1,6 +1,9 @@
 /**
  * 預估股價 = 預估 EPS × 本益比（上緣／合理／下緣）× 今年／明年。
  * 資料皆來自使用者輸入（localStorage）。
+ *
+ * 觸價通知：以最新收盤價對照某年度的 下緣 < 合理 < 上緣，
+ * 取單一互斥區間（低於下緣／低於合理／高於合理／高於上緣）。
  */
 
 import type { DailyPrice } from "./types";
@@ -29,6 +32,14 @@ function parsePe(raw: string): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/** 由 EPS 與本益比字串算出預估股價（無效回 null） */
+function estPriceFrom(eps: number, peStr: string): number | null {
+  const pe = parsePe(peStr);
+  if (pe == null) return null;
+  const price = Math.round(eps * pe * 100) / 100;
+  return Number.isFinite(price) && price > 0 ? price : null;
+}
+
 export function formatTargetPrice(n: number): string {
   return n.toLocaleString("zh-TW", { maximumFractionDigits: 1 });
 }
@@ -42,46 +53,124 @@ export function getEstPriceTargets(stockId: string): EstPriceTarget[] {
     const e = eps[y.key];
     if (e == null || !Number.isFinite(e)) continue;
     for (const b of BANDS) {
-      const pe = parsePe(band[b.key]);
-      if (pe == null) continue;
-      const price = Math.round(e * pe * 100) / 100;
-      if (!Number.isFinite(price) || price <= 0) continue;
+      const price = estPriceFrom(e, band[b.key]);
+      if (price == null) continue;
       out.push({ label: `${y.label}${b.label}`, price });
     }
   }
   return out;
 }
 
-/** 最近一個交易日 K 線高低價是否觸及任一預估股價 */
-export function evaluateEstPriceTouches(
-  targets: EstPriceTarget[],
-  latestBar: DailyPrice | null
-): EstPriceTarget[] {
-  if (!latestBar || targets.length === 0) return [];
-  return targets.filter(
-    (t) => latestBar.low <= t.price && t.price <= latestBar.high
-  );
+// ── 觸價通知：區間判定 ───────────────────────────────────────────
+
+export type EstZone = "低於下緣" | "低於合理" | "高於合理" | "高於上緣";
+
+export interface EstPriceBand {
+  lower: number;
+  fair: number;
+  upper: number;
 }
 
-export interface EstPriceTouchRow {
+/**
+ * 以收盤價對照 下緣 < 合理 < 上緣，取單一互斥區間。
+ * 需三線齊全且遞增；close 恰等於合理時不列入。
+ */
+export function classifyZone(
+  close: number,
+  lower: number,
+  fair: number,
+  upper: number
+): EstZone | null {
+  if (!Number.isFinite(close)) return null;
+  if (!(lower < fair && fair < upper)) return null;
+  if (close < lower) return "低於下緣";
+  if (close < fair) return "低於合理";
+  if (close > upper) return "高於上緣";
+  if (close > fair) return "高於合理";
+  return null; // close === fair
+}
+
+/** 區間對應的臨界價（供顯示） */
+export function refPriceForZone(zone: EstZone, band: EstPriceBand): number {
+  switch (zone) {
+    case "低於下緣":
+      return band.lower;
+    case "低於合理":
+    case "高於合理":
+      return band.fair;
+    case "高於上緣":
+      return band.upper;
+  }
+}
+
+/** 取得今年／明年的預估股價區間（缺任一線則該年度為 null） */
+export function getEstPriceBandsByYear(stockId: string): {
+  thisYear: EstPriceBand | null;
+  nextYear: EstPriceBand | null;
+} {
+  const eps = getEstimatedEps(stockId);
+  const band = getPeBand(stockId);
+
+  const build = (yearKey: "thisYear" | "nextYear"): EstPriceBand | null => {
+    const e = eps[yearKey];
+    if (e == null || !Number.isFinite(e)) return null;
+    const lower = estPriceFrom(e, band.lower);
+    const fair = estPriceFrom(e, band.fair);
+    const upper = estPriceFrom(e, band.upper);
+    if (lower == null || fair == null || upper == null) return null;
+    return { lower, fair, upper };
+  };
+
+  return { thisYear: build("thisYear"), nextYear: build("nextYear") };
+}
+
+export interface EstNotifyEntry {
+  yearLabel: "今年" | "明年";
+  zone: EstZone;
+  close: number;
+  refPrice: number;
+}
+
+export interface EstNotifyRow {
   stockId: string;
   stockName: string;
   barDate: string;
-  touched: EstPriceTarget[];
+  entries: EstNotifyEntry[];
 }
 
-/** 彙整追蹤列表內各股於最近交易日觸及的預估股價 */
-export function collectWatchlistEstPriceTouches(
+/** 依單檔最新收盤價，判定今年／明年落在哪個區間 */
+export function evaluateEstPriceNotify(
+  stockId: string,
+  latestBar: DailyPrice | null
+): EstNotifyEntry[] {
+  if (!latestBar || !Number.isFinite(latestBar.close)) return [];
+  const bands = getEstPriceBandsByYear(stockId);
+  const close = latestBar.close;
+  const entries: EstNotifyEntry[] = [];
+  for (const y of YEARS) {
+    const b = bands[y.key];
+    if (!b) continue;
+    const zone = classifyZone(close, b.lower, b.fair, b.upper);
+    if (!zone) continue;
+    entries.push({
+      yearLabel: y.label as "今年" | "明年",
+      zone,
+      close,
+      refPrice: refPriceForZone(zone, b),
+    });
+  }
+  return entries;
+}
+
+/** 彙整追蹤列表內各股最新收盤價的觸價通知（區間判定） */
+export function collectWatchlistEstPriceNotifications(
   items: { stockId: string; stockName: string }[],
   currentStockId?: string,
   currentLatestBar?: DailyPrice | null
-): EstPriceTouchRow[] {
-  const rows: EstPriceTouchRow[] = [];
+): EstNotifyRow[] {
+  const rows: EstNotifyRow[] = [];
 
   for (const item of items) {
-    const targets = getEstPriceTargets(item.stockId);
-    if (targets.length === 0) continue;
-
     let latestBar: DailyPrice | null = null;
     if (item.stockId === currentStockId && currentLatestBar) {
       latestBar = currentLatestBar;
@@ -92,15 +181,16 @@ export function collectWatchlistEstPriceTouches(
         latestBar = prices[prices.length - 1];
       }
     }
+    if (!latestBar) continue;
 
-    const touched = evaluateEstPriceTouches(targets, latestBar);
-    if (!latestBar || touched.length === 0) continue;
+    const entries = evaluateEstPriceNotify(item.stockId, latestBar);
+    if (entries.length === 0) continue;
 
     rows.push({
       stockId: item.stockId,
       stockName: item.stockName,
       barDate: latestBar.date,
-      touched,
+      entries,
     });
   }
 

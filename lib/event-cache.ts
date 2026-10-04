@@ -46,6 +46,20 @@ function evictIfNeeded(all: Record<string, StockEventCacheEntry>, keepId: string
   }
 }
 
+/** 僅保留 keep 內股票的行事曆事件快取，其餘刪除 */
+export function pruneToIds(keep: Set<string>) {
+  if (typeof window === "undefined") return;
+  const all = readAll();
+  let changed = false;
+  for (const id of Object.keys(all)) {
+    if (!keep.has(id)) {
+      delete all[id];
+      changed = true;
+    }
+  }
+  if (changed) writeAll(all);
+}
+
 export function mergeCalendarEvents(
   existing: StockCalendarEvent[],
   incoming: StockCalendarEvent[]

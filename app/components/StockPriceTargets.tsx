@@ -11,10 +11,18 @@ import {
   setEstimatedEps,
 } from "@/lib/estimated-eps";
 import {
-  collectWatchlistEstPriceTouches,
+  collectWatchlistEstPriceNotifications,
   formatTargetPrice,
+  type EstZone,
 } from "@/lib/estimated-price";
 import Modal from "./Modal";
+
+/** 區間對應的臨界價名稱 */
+function zoneBandWord(zone: EstZone): string {
+  if (zone === "低於下緣") return "下緣";
+  if (zone === "高於上緣") return "上緣";
+  return "合理";
+}
 
 const TOUCH_JUMP_MS = 2500;
 
@@ -44,7 +52,7 @@ export default function StockPriceTargets({
 
   useEffect(() => {
     const onEstInputsChanged = (ev: Event) => {
-      // 預估 EPS 或本益比變動 → 重新計算預估股價觸價
+      // 預估 EPS 或本益比變動 → 重新計算觸價通知
       setTouchTick((t) => t + 1);
       const detail = (ev as CustomEvent<{ stockId?: string }>).detail;
       if (ev.type === "ff-estimated-eps-changed") {
@@ -62,7 +70,7 @@ export default function StockPriceTargets({
   }, [stockId, epsYear]);
 
   const watchTouches = useMemo(
-    () => collectWatchlistEstPriceTouches(watchItems, stockId, latestBar),
+    () => collectWatchlistEstPriceNotifications(watchItems, stockId, latestBar),
     [watchItems, stockId, latestBar, touchTick]
   );
 
@@ -107,7 +115,7 @@ export default function StockPriceTargets({
     const emptyText =
       watchItems.length === 0
         ? "追蹤列表尚無股票"
-        : "追蹤列表中無股票觸及預估股價";
+        : "追蹤列表中無符合觸價條件的股票";
     const hasTouches = watchTouches.length > 0;
     const activeTouch = hasTouches
       ? watchTouches[touchIndex % watchTouches.length]
@@ -118,10 +126,10 @@ export default function StockPriceTargets({
         <button
           type="button"
           className="touch-marquee"
-          title="點擊查看完整觸價內容"
+          title="點擊查看完整觸價通知"
           onClick={() => setTouchesOpen(true)}
         >
-          <span className="touch-marquee-label">最近交易日觸價</span>
+          <span className="touch-marquee-label">觸價通知</span>
           <div className="touch-marquee-viewport">
             {activeTouch ? (
               <span
@@ -135,9 +143,12 @@ export default function StockPriceTargets({
                   {activeTouch.stockId}
                 </span>
                 <span className="stock-target-touch-prices">
-                  {activeTouch.touched.map((t) => (
-                    <span key={t.label} className="stock-target-touch-item">
-                      {t.label} {formatTargetPrice(t.price)}
+                  {activeTouch.entries.map((e) => (
+                    <span
+                      key={e.yearLabel}
+                      className="stock-target-touch-item"
+                    >
+                      {e.yearLabel}·{e.zone}
                     </span>
                   ))}
                 </span>
@@ -149,7 +160,7 @@ export default function StockPriceTargets({
         </button>
         <Modal
           open={touchesOpen}
-          title="最近交易日觸價"
+          title="觸價通知"
           onClose={() => setTouchesOpen(false)}
         >
           {hasTouches ? (
@@ -162,9 +173,13 @@ export default function StockPriceTargets({
                     <span className="stock-target-touch-date">{row.barDate}</span>
                   )}
                   <span className="stock-target-touch-prices">
-                    {row.touched.map((t) => (
-                      <span key={t.label} className="stock-target-touch-item">
-                        {t.label} {formatTargetPrice(t.price)}
+                    {row.entries.map((e) => (
+                      <span
+                        key={e.yearLabel}
+                        className="stock-target-touch-item"
+                      >
+                        {e.yearLabel} {e.zone}（收 {formatTargetPrice(e.close)} /{" "}
+                        {zoneBandWord(e.zone)} {formatTargetPrice(e.refPrice)}）
                       </span>
                     ))}
                   </span>

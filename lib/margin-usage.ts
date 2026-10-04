@@ -4,9 +4,9 @@
  * - 否則證交所 MI_MARGN（上市）
  */
 
-import type { StockMarginUsageSnapshot } from "./types";
+import type { MarginUsagePoint, StockMarginUsageSnapshot } from "./types";
 
-export type { StockMarginUsageSnapshot };
+export type { MarginUsagePoint, StockMarginUsageSnapshot };
 
 const FINMIND_API = "https://api.finmindtrade.com/api/v4/data";
 const USER_AGENT =
@@ -232,4 +232,84 @@ export async function getStockMarginUsage(
 
   cache.set(id, { at: now, value });
   return value;
+}
+
+const historyCache = new Map<
+  string,
+  { at: number; value: MarginUsagePoint[] }
+>();
+const HISTORY_CACHE_MS = 1000 * 60 * 30;
+
+/**
+ * 取得個股融資使用率「歷史走勢」。
+ * @param startDate 起始日 YYYY-MM-DD；未提供時預設約半年前。
+ * 由 FinMind TaiwanStockMarginPurchaseShortSale 逐日計算 餘額/限額 × 100。
+ */
+export async function getStockMarginUsageHistory(
+  stockId: string,
+  startDate?: string
+): Promise<MarginUsagePoint[]> {
+  const id = stockId.trim();
+  if (!id) return [];
+
+  const start = (startDate ?? "").trim() || defaultHistoryStart();
+  const cacheKey = `${id}@${start}`;
+  const now = Date.now();
+  const hit = historyCache.get(cacheKey);
+  if (hit && now - hit.at < HISTORY_CACHE_MS) {
+    return hit.value;
+  }
+
+  const url = new URL(FINMIND_API);
+  url.searchParams.set("dataset", "TaiwanStockMarginPurchaseShortSale");
+  url.searchParams.set("data_id", id);
+  url.searchParams.set("start_date", start);
+
+  const token = process.env.FINMIND_TOKEN?.trim();
+
+  let points: MarginUsagePoint[] = [];
+  try {
+    const res = await fetch(url.toString(), {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      cache: "no-store",
+    });
+    if (res.ok) {
+      const json = (await res.json()) as {
+        status?: number;
+        data?: {
+          date: string;
+          MarginPurchaseTodayBalance?: number;
+          MarginPurchaseLimit?: number;
+        }[];
+      };
+      if (json.status === 200 && json.data?.length) {
+        const seen = new Set<string>();
+        for (const row of json.data) {
+          const date = String(row.date ?? "").slice(0, 10);
+          if (!date || seen.has(date)) continue;
+          const rate = calcUsage(
+            Number(row.MarginPurchaseTodayBalance),
+            Number(row.MarginPurchaseLimit)
+          );
+          if (rate == null) continue;
+          seen.add(date);
+          points.push({ date, rate });
+        }
+        points.sort((a, b) => a.date.localeCompare(b.date));
+      }
+    }
+  } catch {
+    points = [];
+  }
+
+  historyCache.set(cacheKey, { at: now, value: points });
+  return points;
+}
+
+function defaultHistoryStart(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 6);
+  // 多抓幾天當緩衝，避免起始日恰逢休市
+  d.setDate(d.getDate() - 7);
+  return d.toISOString().slice(0, 10);
 }

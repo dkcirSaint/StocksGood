@@ -53,6 +53,20 @@ export function getPeBand(stockId: string): PeBand {
   return loadAll()[stockId] ?? emptyPeBand();
 }
 
+/** 僅保留 keep 內股票的本益比區間，其餘刪除 */
+export function pruneToIds(keep: Set<string>) {
+  if (typeof window === "undefined") return;
+  const all = loadAll();
+  let changed = false;
+  for (const id of Object.keys(all)) {
+    if (!keep.has(id)) {
+      delete all[id];
+      changed = true;
+    }
+  }
+  if (changed) persistAll(all);
+}
+
 export function setPeBand(stockId: string, band: PeBand) {
   const all = loadAll();
   if (!band.lower && !band.fair && !band.upper) {
