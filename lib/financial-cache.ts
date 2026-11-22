@@ -92,7 +92,7 @@ function trimQuarters(items: QuarterlyReport[]): QuarterlyReport[] {
   return items
     .slice()
     .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 4);
+    .slice(0, 5);
 }
 
 export function saveFinancialCache(

@@ -8,6 +8,7 @@ import {
   getLatestRevenueMonth,
   getLatestQuarterDate,
   getLatestPriceDate,
+  getLatestDividendYield,
 } from "@/lib/finmind";
 import {
   getInvestorConferences,
@@ -84,15 +85,16 @@ export async function GET(req: NextRequest) {
     return getDailyPrices(stock.stock_id);
   };
 
-  const [revenueRes, reportsRes, confRes, shRes, priceRes] =
+  const [revenueRes, reportsRes, confRes, shRes, priceRes, yieldRes] =
     await Promise.allSettled([
       needRevenue ? getMonthlyRevenue(stock.stock_id, 3) : Promise.resolve(null),
       needQuarter
-        ? getQuarterlyReports(stock.stock_id, 4)
+        ? getQuarterlyReports(stock.stock_id, 5)
         : Promise.resolve(null),
       getInvestorConferences(stock),
       getShareholderMeetings(stock),
       priceFetch(),
+      getLatestDividendYield(stock.stock_id),
     ]);
 
   const monthlyRevenue =
@@ -121,6 +123,9 @@ export async function GET(req: NextRequest) {
       : undefined;
   if (priceRes.status === "rejected") warnings.push("K 線價格資料取得失敗");
 
+  const dividendYield =
+    yieldRes.status === "fulfilled" ? yieldRes.value : null;
+
   const result = {
     stock,
     dailyPrices,
@@ -131,6 +136,7 @@ export async function GET(req: NextRequest) {
     mopsConferenceUrl: conferencePageUrl(stock),
     mopsShareholderUrl: shareholderPageUrl(stock),
     warnings,
+    dividendYield,
     financialsMeta: {
       latestRevenueMonth,
       latestQuarterDate,

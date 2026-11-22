@@ -454,7 +454,7 @@ export function computeSma(
   });
 }
 
-export const MA_PERIODS = [5, 10, 20, 60] as const;
+export const MA_PERIODS = [5, 10, 20, 60, 120, 240] as const;
 
 export type MaPeriod = (typeof MA_PERIODS)[number];
 
@@ -463,4 +463,6 @@ export const MA_COLORS: Record<MaPeriod, string> = {
   10: "#e879f9",
   20: "#4f8cff",
   60: "#2ecc8f",
+  120: "#ff9f43",
+  240: "#c0c8d8",
 };

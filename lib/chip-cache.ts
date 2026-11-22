@@ -6,6 +6,8 @@ export const MAX_CHIP_PERIODS = 2;
 export interface ChipPeriodEntry {
   date: string;
   ratios: Record<LargeHolderTier, number>;
+  /** 該級距股東人數；舊快取可能沒有 */
+  people?: Record<LargeHolderTier, number>;
 }
 
 export interface StockChipCacheEntry {
@@ -51,6 +53,20 @@ function writeAll(data: Record<string, StockChipCacheEntry>) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
+function normalizePeople(
+  people: ChipPeriodEntry["people"]
+): Record<LargeHolderTier, number> | undefined {
+  if (
+    typeof people?.["1000"] !== "number" ||
+    typeof people?.["400"] !== "number" ||
+    !Number.isFinite(people["1000"]) ||
+    !Number.isFinite(people["400"])
+  ) {
+    return undefined;
+  }
+  return { "1000": people["1000"], "400": people["400"] };
+}
+
 function normalizePeriods(periods: ChipPeriodEntry[]): ChipPeriodEntry[] {
   const map = new Map<string, ChipPeriodEntry>();
   for (const p of periods) {
@@ -64,9 +80,11 @@ function normalizePeriods(periods: ChipPeriodEntry[]): ChipPeriodEntry[] {
     ) {
       continue;
     }
+    const people = normalizePeople(p.people);
     map.set(p.date, {
       date: p.date,
       ratios: { "1000": ratios["1000"], "400": ratios["400"] },
+      ...(people ? { people } : {}),
     });
   }
   return [...map.values()]
@@ -102,6 +120,8 @@ export function periodsToSnapshots(
   for (const tier of ["1000", "400"] as const) {
     const ratio = latest.ratios[tier];
     const prevRatio = prev ? prev.ratios[tier] : null;
+    const people = latest.people?.[tier] ?? null;
+    const prevPeople = prev?.people?.[tier] ?? null;
     out.push({
       id: `${stockId}-${latest.date}-${tier}`,
       date: latest.date,
@@ -109,7 +129,10 @@ export function periodsToSnapshots(
       stockName,
       tier,
       ratio,
+      people,
       wowChange: prevRatio != null ? ratio - prevRatio : null,
+      wowPeople:
+        people != null && prevPeople != null ? people - prevPeople : null,
     });
   }
 

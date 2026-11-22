@@ -220,10 +220,38 @@ export async function getLatestPriceDate(
   return dates.sort().pop() ?? null;
 }
 
-/** 取得每日 K 線資料（含成交量）。預設抓約 14 個月，供 1 年顯示與 MACD 暖身 */
+export interface DividendYieldSnapshot {
+  date: string;
+  yieldPct: number;
+}
+
+/** 證交所殖利率：最近一年度現金股利／收盤價（TaiwanStockPER 最新一筆） */
+export async function getLatestDividendYield(
+  stockId: string,
+  opts: FinMindFetchOpts = {}
+): Promise<DividendYieldSnapshot | null> {
+  const start = new Date();
+  start.setDate(start.getDate() - 14);
+  const raw = await finmind<{
+    date: string;
+    dividend_yield: number;
+  }>(
+    "TaiwanStockPER",
+    { data_id: stockId, start_date: start.toISOString().slice(0, 10) },
+    opts
+  );
+  const rows = raw
+    .filter((r) => r.date && Number.isFinite(r.dividend_yield))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const last = rows[rows.length - 1];
+  if (!last) return null;
+  return { date: last.date, yieldPct: last.dividend_yield };
+}
+
+/** 取得每日 K 線資料（含成交量）。預設抓約兩年，供 1 年顯示與 MA240 暖身 */
 export async function getDailyPrices(
   stockId: string,
-  days = 400,
+  days = 730,
   opts: FinMindFetchOpts = {}
 ): Promise<DailyPrice[]> {
   const start = new Date();
@@ -283,13 +311,13 @@ function quarterLabel(date: string): string {
   return `${y} Q${q}`;
 }
 
-/** 取得近 N 季季報（預設四季） */
+/** 取得近 N 季季報（預設五季：畫面四季＋上期 TTM 對比） */
 export async function getQuarterlyReports(
   stockId: string,
-  quarters = 4
+  quarters = 5
 ): Promise<QuarterlyReport[]> {
   const start = new Date();
-  start.setMonth(start.getMonth() - 18); // 約 6 季資料供擷取四季
+  start.setMonth(start.getMonth() - 21); // 約 7 季資料供擷取五季
   const startDate = start.toISOString().slice(0, 10);
 
   const raw = await finmind<{

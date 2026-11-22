@@ -47,6 +47,7 @@ const TIER_1000_MIN_SHARES = 800_001;
 interface LevelRow {
   level: number;
   percent: number;
+  people: number | null;
 }
 
 function scaDateToIso(scaDate: string): string {
@@ -67,11 +68,12 @@ function parseCsv(text: string): {
   const iId = header.indexOf("證券代號");
   const iLevel = header.indexOf("持股分級");
   const iPct = header.findIndex((h) => h.includes("比例"));
+  const iPeople = header.findIndex((h) => h.includes("人數"));
   if (iDate < 0 || iId < 0 || iLevel < 0 || iPct < 0) {
     throw new Error("TDCC 開放資料欄位異常");
   }
 
-  const byStock = new Map<string, Map<number, number>>();
+  const byStock = new Map<string, Map<number, LevelRow>>();
   let date = "";
 
   for (let i = 1; i < lines.length; i++) {
@@ -86,6 +88,8 @@ function parseCsv(text: string): {
     }
     if (!date) date = d;
     if (level < 1 || level > 15) continue;
+    const peopleRaw = iPeople >= 0 ? Number(cols[iPeople]?.trim()) : NaN;
+    const people = Number.isFinite(peopleRaw) ? peopleRaw : null;
 
     let levels = byStock.get(id);
     if (!levels) {
@@ -93,7 +97,7 @@ function parseCsv(text: string): {
       byStock.set(id, levels);
     }
     // 若有重複列，後寫覆蓋前寫（數值相同）
-    levels.set(level, percent);
+    levels.set(level, { level, percent, people });
   }
 
   if (!date || byStock.size === 0) {
@@ -102,10 +106,7 @@ function parseCsv(text: string): {
 
   const out = new Map<string, LevelRow[]>();
   for (const [id, levels] of byStock) {
-    out.set(
-      id,
-      [...levels.entries()].map(([level, percent]) => ({ level, percent }))
-    );
+    out.set(id, [...levels.values()]);
   }
 
   return { date, byStock: out };
@@ -119,6 +120,17 @@ function tierRatio(rows: LevelRow[], minShares: number): number {
   }, 0);
 }
 
+function tierPeople(rows: LevelRow[], minShares: number): number | null {
+  const inTier = rows.filter((row) => {
+    const min = LEVEL_MIN_SHARES[row.level];
+    return min != null && min >= minShares;
+  });
+  if (inTier.length === 0 || inTier.every((row) => row.people == null)) {
+    return null;
+  }
+  return inTier.reduce((sum, row) => sum + (row.people ?? 0), 0);
+}
+
 function buildPeriodsForStock(
   stockId: string,
   stockName: string,
@@ -127,12 +139,17 @@ function buildPeriodsForStock(
   const dates = [...byDate.keys()].sort((a, b) => a.localeCompare(b));
   const periods: ChipPeriodEntry[] = dates.map((scaDate) => {
     const rows = byDate.get(scaDate)!;
+    const people1000 = tierPeople(rows, TIER_1000_MIN_SHARES);
+    const people400 = tierPeople(rows, TIER_400_MIN_SHARES);
     return {
       date: scaDateToIso(scaDate),
       ratios: {
         "1000": tierRatio(rows, TIER_1000_MIN_SHARES),
         "400": tierRatio(rows, TIER_400_MIN_SHARES),
       },
+      ...(people1000 != null && people400 != null
+        ? { people: { "1000": people1000, "400": people400 } }
+        : {}),
     };
   });
 
@@ -155,6 +172,8 @@ function buildSnapshotsForStock(
   for (const tier of ["1000", "400"] as const) {
     const ratio = latest.ratios[tier];
     const prevRatio = prev ? prev.ratios[tier] : null;
+    const people = latest.people?.[tier] ?? null;
+    const prevPeople = prev?.people?.[tier] ?? null;
     out.push({
       id: `${stockId}-${latest.date}-${tier}`,
       date: latest.date,
@@ -162,7 +181,10 @@ function buildSnapshotsForStock(
       stockName,
       tier,
       ratio,
+      people,
       wowChange: prevRatio != null ? ratio - prevRatio : null,
+      wowPeople:
+        people != null && prevPeople != null ? people - prevPeople : null,
     });
   }
 

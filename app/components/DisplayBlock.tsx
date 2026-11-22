@@ -151,7 +151,7 @@ export default function DisplayBlock({
 
       {tab === "chart" ? (
         prices.length > 0 ? (
-          <PriceChart data={prices} />
+          <PriceChart data={prices} showVolumeMa />
         ) : (
           <p className="empty">查無 K 線資料。</p>
         )

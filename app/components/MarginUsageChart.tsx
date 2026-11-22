@@ -136,9 +136,15 @@ export default function MarginUsageChart({
     };
     chart.subscribeCrosshairMove(onCrosshairMove);
 
+    // 在隱藏的 tab 內建立時寬度為 0，顯示後需重新 fit，否則走勢會擠在右側
+    let lastWidth = el.clientWidth;
     const ro = new ResizeObserver(() => {
-      if (containerRef.current)
-        chart.applyOptions({ width: containerRef.current.clientWidth });
+      if (!containerRef.current) return;
+      const width = containerRef.current.clientWidth;
+      if (width === 0) return;
+      chart.applyOptions({ width });
+      if (lastWidth === 0 && width > 0) chart.timeScale().fitContent();
+      lastWidth = width;
     });
     ro.observe(el);
 

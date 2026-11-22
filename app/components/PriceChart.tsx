@@ -29,10 +29,14 @@ const UP = "#ff5c75";
 const DOWN = "#2ecc8f";
 const DIF_COLOR = "#f6c454";
 const DEA_COLOR = "#4f8cff";
+const VOL_MA5_COLOR = "#c0c8d8";
+const VOL_MA20_COLOR = "#7dd3fc";
 
 interface Refs {
   candle: ISeriesApi<"Candlestick">;
   volume: ISeriesApi<"Histogram">;
+  volMa5: ISeriesApi<"Line">;
+  volMa20: ISeriesApi<"Line">;
   ma: Record<MaPeriod, ISeriesApi<"Line">>;
   macdHist: ISeriesApi<"Histogram">;
   dif: ISeriesApi<"Line">;
@@ -46,6 +50,8 @@ interface HoverBarInfo {
   low: number;
   close: number;
   volume: number;
+  volMa5: number | null;
+  volMa20: number | null;
   dif: number;
   dea: number;
   hist: number;
@@ -61,15 +67,30 @@ function formatPrice(n: number): string {
   return n.toLocaleString("zh-TW", { maximumFractionDigits: 2 });
 }
 
-function formatVolume(n: number): string {
-  return `${n.toLocaleString("zh-TW")} 股`;
+function formatVolume(n: number, unit: string): string {
+  return `${n.toLocaleString("zh-TW")}${unit ? ` ${unit}` : ""}`;
 }
 
 function formatMacd(n: number): string {
   return n.toFixed(4);
 }
 
-export default function PriceChart({ data }: { data: DailyPrice[] }) {
+export default function PriceChart({
+  data,
+  volumeUnit = "股",
+  showVolumeMa = false,
+}: {
+  data: DailyPrice[];
+  /** 成交量單位；指數可傳空字串 */
+  volumeUnit?: string;
+  /** 在量能軸上疊 5 日／20 日均量（台股個股、加權、櫃買） */
+  showVolumeMa?: boolean;
+}) {
+  // 部分指數（如費城半導體、美元指數）無成交量資料
+  const hasVolume = data.some((d) => d.volume > 0);
+  const showVolMa = showVolumeMa && hasVolume;
+  const hasVolumeRef = useRef(hasVolume);
+  hasVolumeRef.current = hasVolume;
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<Refs | null>(null);
@@ -126,6 +147,25 @@ export default function PriceChart({ data }: { data: DailyPrice[] }) {
       scaleMargins: { top: 0.82, bottom: 0 },
     });
 
+    const volMaOptions = {
+      lineWidth: 1 as const,
+      priceScaleId: "",
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+      priceFormat: { type: "volume" as const },
+    };
+    const volMa5 = chart.addSeries(
+      LineSeries,
+      { ...volMaOptions, color: VOL_MA5_COLOR },
+      0
+    );
+    const volMa20 = chart.addSeries(
+      LineSeries,
+      { ...volMaOptions, color: VOL_MA20_COLOR },
+      0
+    );
+
     const ma = {} as Record<MaPeriod, ISeriesApi<"Line">>;
     for (const period of MA_PERIODS) {
       ma[period] = chart.addSeries(
@@ -162,7 +202,7 @@ export default function PriceChart({ data }: { data: DailyPrice[] }) {
     }
 
     chartRef.current = chart;
-    seriesRef.current = { candle, volume, ma, macdHist, dif, dea };
+    seriesRef.current = { candle, volume, volMa5, volMa20, ma, macdHist, dif, dea };
 
     const onCrosshairMove = (param: MouseEventParams<Time>) => {
       if (param.time == null || param.point == undefined) {
@@ -184,6 +224,8 @@ export default function PriceChart({ data }: { data: DailyPrice[] }) {
       const low = candleData?.low ?? fromMap?.low;
       const close = candleData?.close ?? fromMap?.close;
       const volumeVal = volumeData?.value ?? fromMap?.volume;
+      const volMa5Val = param.seriesData.get(volMa5) as { value: number } | undefined;
+      const volMa20Val = param.seriesData.get(volMa20) as { value: number } | undefined;
       const difVal = difData?.value ?? macdMap?.dif;
       const deaVal = deaData?.value ?? macdMap?.dea;
       const histVal = histData?.value ?? macdMap?.hist;
@@ -193,11 +235,11 @@ export default function PriceChart({ data }: { data: DailyPrice[] }) {
         high == null ||
         low == null ||
         close == null ||
-        volumeVal == null ||
         difVal == null ||
         deaVal == null ||
         histVal == null ||
-        !Number.isFinite(volumeVal) ||
+        (hasVolumeRef.current &&
+          (volumeVal == null || !Number.isFinite(volumeVal))) ||
         !Number.isFinite(difVal) ||
         !Number.isFinite(deaVal) ||
         !Number.isFinite(histVal)
@@ -211,7 +253,9 @@ export default function PriceChart({ data }: { data: DailyPrice[] }) {
         high,
         low,
         close,
-        volume: volumeVal,
+        volume: volumeVal ?? 0,
+        volMa5: volMa5Val?.value ?? null,
+        volMa20: volMa20Val?.value ?? null,
         dif: difVal,
         dea: deaVal,
         hist: histVal,
@@ -219,9 +263,15 @@ export default function PriceChart({ data }: { data: DailyPrice[] }) {
     };
     chart.subscribeCrosshairMove(onCrosshairMove);
 
+    // 在隱藏的 tab 內建立時寬度為 0，顯示後需重新 fit，否則 K 棒會擠在右側
+    let lastWidth = el.clientWidth;
     const ro = new ResizeObserver(() => {
-      if (containerRef.current)
-        chart.applyOptions({ width: containerRef.current.clientWidth });
+      if (!containerRef.current) return;
+      const width = containerRef.current.clientWidth;
+      if (width === 0) return;
+      chart.applyOptions({ width });
+      if (lastWidth === 0 && width > 0) chart.timeScale().fitContent();
+      lastWidth = width;
     });
     ro.observe(el);
 
@@ -268,12 +318,30 @@ export default function PriceChart({ data }: { data: DailyPrice[] }) {
       }))
     );
     s.volume.setData(
-      slice.map((d) => ({
-        time: d.date,
-        value: d.volume,
-        color: d.close >= d.open ? "rgba(255,92,117,0.5)" : "rgba(46,204,143,0.5)",
-      }))
+      hasVolume
+        ? slice.map((d) => ({
+            time: d.date,
+            value: d.volume,
+            color:
+              d.close >= d.open ? "rgba(255,92,117,0.5)" : "rgba(46,204,143,0.5)",
+          }))
+        : []
     );
+
+    const volumes = data.map((d) => d.volume);
+    const volMa5 = computeSma(volumes, 5);
+    const volMa20 = computeSma(volumes, 20);
+    const toVolMaData = (sma: (number | null)[]) =>
+      showVolMa
+        ? slice
+            .map((d, i) => {
+              const v = sma[start + i];
+              return v != null ? { time: d.date, value: v } : null;
+            })
+            .filter((p): p is { time: string; value: number } => p != null)
+        : [];
+    s.volMa5.setData(toVolMaData(volMa5));
+    s.volMa20.setData(toVolMaData(volMa20));
 
     for (const period of MA_PERIODS) {
       const sma = smaByPeriod[period].slice(start);
@@ -298,7 +366,7 @@ export default function PriceChart({ data }: { data: DailyPrice[] }) {
     s.dea.setData(macdSlice.map((m, i) => ({ time: slice[i].date, value: m.dea })));
 
     chart.timeScale().fitContent();
-  }, [data, range]);
+  }, [data, range, hasVolume, showVolMa]);
 
   return (
     <div className="chart-wrap">
@@ -326,12 +394,32 @@ export default function PriceChart({ data }: { data: DailyPrice[] }) {
                     {formatPrice(hoverBar.close)}
                   </strong>
                 </span>
-                <span className="chart-ohlc-sep" aria-hidden>
-                  |
-                </span>
-                <span className="chart-ohlc-item">
-                  量 <strong>{formatVolume(hoverBar.volume)}</strong>
-                </span>
+                {hasVolume && (
+                  <>
+                    <span className="chart-ohlc-sep" aria-hidden>
+                      |
+                    </span>
+                    <span className="chart-ohlc-item">
+                      量 <strong>{formatVolume(hoverBar.volume, volumeUnit)}</strong>
+                    </span>
+                    {showVolMa && hoverBar.volMa5 != null && (
+                      <span className="chart-ohlc-item">
+                        5日均量{" "}
+                        <strong style={{ color: VOL_MA5_COLOR }}>
+                          {formatVolume(hoverBar.volMa5, volumeUnit)}
+                        </strong>
+                      </span>
+                    )}
+                    {showVolMa && hoverBar.volMa20 != null && (
+                      <span className="chart-ohlc-item">
+                        20日均量{" "}
+                        <strong style={{ color: VOL_MA20_COLOR }}>
+                          {formatVolume(hoverBar.volMa20, volumeUnit)}
+                        </strong>
+                      </span>
+                    )}
+                  </>
+                )}
               </div>
               <div className="chart-ohlc-row chart-ohlc-row--macd">
                 <span className="chart-ohlc-item">
@@ -369,7 +457,8 @@ export default function PriceChart({ data }: { data: DailyPrice[] }) {
       <div ref={containerRef} className="chart-canvas" />
       <div className="chart-legend">
         <span className="chart-legend-group">
-          上：K線＋成交量＋MA(5,10,20,60)
+          上：K線{hasVolume ? "＋成交量" : ""}
+          {showVolMa ? "＋均量" : ""}＋MA({MA_PERIODS.join(",")})
         </span>
         <span className="chart-legend-group chart-legend-ma">
           {MA_PERIODS.map((p) => (
@@ -378,6 +467,12 @@ export default function PriceChart({ data }: { data: DailyPrice[] }) {
             </span>
           ))}
         </span>
+        {showVolMa && (
+          <span className="chart-legend-group">
+            <span style={{ color: VOL_MA5_COLOR }}>● 5日均量</span>{" "}
+            <span style={{ color: VOL_MA20_COLOR }}>● 20日均量</span>
+          </span>
+        )}
         <span className="chart-legend-group">
           下：MACD(12,26,9){" "}
           <span style={{ color: DIF_COLOR }}>● DIF</span>{" "}

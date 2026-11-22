@@ -109,6 +109,8 @@ export interface StockResult {
   mopsConferenceUrl: string;
   mopsShareholderUrl: string;
   warnings: string[];
+  /** 證交所殖利率（最近一年度現金股利／收盤價）；無資料為 null */
+  dividendYield?: { date: string; yieldPct: number } | null;
   financialsMeta?: {
     latestRevenueMonth: string | null;
     latestQuarterDate: string | null;
@@ -162,8 +164,12 @@ export interface LargeHolderSnapshot {
   tier: LargeHolderTier;
   /** 大戶持股比例（%） */
   ratio: number;
+  /** 該級距股東人數；舊快取沒有時為 null */
+  people: number | null;
   /** 與上一期公布日相比的增減（百分點） */
   wowChange: number | null;
+  /** 與上一期公布日相比的人數增減 */
+  wowPeople: number | null;
 }
 
 /** 大盤融資維持率 */

@@ -1,10 +1,11 @@
 import type { DailyPrice } from "./types";
 
-const CACHE_KEY = "ff_price_cache";
+const CACHE_KEY = "ff_price_cache_v2";
+const LEGACY_CACHE_KEY = "ff_price_cache";
 const ALIAS_KEY = "ff_stock_alias";
 
-/** 約一年交易日 + MACD 暖身 */
-const MAX_CALENDAR_DAYS = 400;
+/** 約兩年交易日，供 1 年顯示與 MA240 暖身 */
+const MAX_CALENDAR_DAYS = 730;
 
 /** 最多快取檔數，超出時 LRU 淘汰最久未使用 */
 const MAX_CACHED_STOCKS = 30;
@@ -31,8 +32,18 @@ function readAliases(): Record<string, string> {
   }
 }
 
+function dropLegacyCache() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(LEGACY_CACHE_KEY);
+  } catch {
+    /* 無法存取時忽略 */
+  }
+}
+
 function readAll(): Record<string, StockPriceCache> {
   if (typeof window === "undefined") return {};
+  dropLegacyCache();
   try {
     const raw = window.localStorage.getItem(CACHE_KEY);
     if (!raw) return {};

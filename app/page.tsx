@@ -44,12 +44,17 @@ import { useWatchlists, isStockWatched, findWatchedStockByQuery } from "@/lib/wa
 import ChipPanel from "./components/ChipPanel";
 import StockMemo from "./components/StockMemo";
 import NewsModal from "./components/NewsModal";
+import MacroWorkspace from "./components/MacroWorkspace";
+import MacroAnalysisModal from "./components/MacroAnalysisModal";
+import GlobalIndexWorkspace from "./components/GlobalIndexWorkspace";
+import HoldingsWorkspace from "./components/HoldingsWorkspace";
 import StockInsightsPanel from "./components/StockInsightsPanel";
 import StockPriceTargets from "./components/StockPriceTargets";
 import DisplayBlock from "./components/DisplayBlock";
 import DataAnalysisModal from "./components/DataAnalysisModal";
 import NotifySettings from "./components/NotifySettings";
 import WatchlistSettings from "./components/WatchlistSettings";
+import GoldPickModal from "./components/GoldPickModal";
 import Modal from "./components/Modal";
 import {
   buildMopsCalendarEvents,
@@ -59,6 +64,18 @@ import { analyzeMacd } from "@/lib/indicators";
 import { getEstimatedEps } from "@/lib/estimated-eps";
 import { getPeBand, setPeBand as savePeBand } from "@/lib/pe-band";
 import { getEstPriceTargets } from "@/lib/estimated-price";
+import { hasGoldPicks } from "@/lib/gold-picks";
+
+type MainTab = "tw-stock" | "global" | "macro" | "holdings";
+
+const MAIN_TABS: { id: MainTab; label: string }[] = [
+  { id: "tw-stock", label: "台股個股" },
+  { id: "global", label: "國際指數" },
+  { id: "macro", label: "總經" },
+  { id: "holdings", label: "股票庫存" },
+];
+
+const ACTIVE_TAB_KEY = "ff_active_tab";
 
 function formatMoney(n: number): string {
   // 以「億元」為單位呈現大數字
@@ -121,8 +138,12 @@ async function refreshStockCaches(stockId: string) {
   const params = new URLSearchParams({ q: stockId });
   if (localCache?.latestRevenueMonth)
     params.set("revLatest", localCache.latestRevenueMonth);
-  if (localCache?.latestQuarterDate)
+  if (
+    localCache?.latestQuarterDate &&
+    (localCache.quarterlyReports?.length ?? 0) >= 5
+  ) {
     params.set("qLatest", localCache.latestQuarterDate);
+  }
   if (priceCache?.latestDate) params.set("priceLatest", priceCache.latestDate);
 
   let data: (StockApiResponse & { error?: string }) | null = null;
@@ -249,33 +270,119 @@ function RevenueSection({ data }: { data: MonthlyRevenuePoint[] }) {
   );
 }
 
+function sumMetric(
+  quarters: QuarterlyReport[],
+  key: string
+): number | null {
+  let sum = 0;
+  let has = false;
+  for (const q of quarters) {
+    const v = q.metrics.find((m) => m.key === key)?.value;
+    if (v == null || Number.isNaN(v)) continue;
+    sum += v;
+    has = true;
+  }
+  return has ? sum : null;
+}
+
+function ttmEps(reports: QuarterlyReport[]): number | null {
+  return sumMetric(reports.slice(0, 4), "EPS");
+}
+
+function ttmPe(
+  close: number | null | undefined,
+  reports: QuarterlyReport[]
+): number | null {
+  const eps = ttmEps(reports);
+  if (close == null || !Number.isFinite(close) || close <= 0) return null;
+  if (eps == null || !Number.isFinite(eps) || eps <= 0) return null;
+  return close / eps;
+}
+
+function parsePeNumber(raw: string): number | null {
+  const n = Number(raw.trim().replace(/,/g, ""));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function ttmPeTone(
+  pe: number,
+  lower: number | null,
+  upper: number | null
+): "up" | "down" | "" {
+  if (upper != null && pe > upper) return "up";
+  if (lower != null && pe < lower) return "down";
+  return "";
+}
+
+function ttmEpsChange(
+  current: number | null,
+  previous: number | null,
+  hasPrevWindow: boolean
+): "up" | "down" | "flat" | null {
+  if (!hasPrevWindow || current == null || previous == null) return null;
+  const a = Math.round(current * 100);
+  const b = Math.round(previous * 100);
+  if (a > b) return "up";
+  if (a < b) return "down";
+  return "flat";
+}
+
 function ReportsSection({ data }: { data: QuarterlyReport[] }) {
   if (data.length === 0) return <p className="empty">查無季報資料。</p>;
-  const labels = data[0].metrics.map((m) => ({ key: m.key, label: m.label }));
+  const shown = data.slice(0, 4);
+  const labels = shown[0].metrics.map((m) => ({ key: m.key, label: m.label }));
+  const hasPrevTtm = data.length >= 5;
+  const epsChange = ttmEpsChange(
+    sumMetric(shown, "EPS"),
+    hasPrevTtm ? sumMetric(data.slice(1, 5), "EPS") : null,
+    hasPrevTtm
+  );
   return (
     <table className="fin">
       <thead>
         <tr>
           <th>科目</th>
-          {data.map((q) => (
+          <th className="q-ttm">近四季累計</th>
+          {shown.map((q) => (
             <th key={q.date}>{q.quarter}</th>
           ))}
         </tr>
       </thead>
       <tbody>
-        {labels.map((row) => (
-          <tr key={row.key}>
-            <td>{row.label}</td>
-            {data.map((q) => {
-              const metric = q.metrics.find((m) => m.key === row.key);
-              return (
-                <td key={q.date}>
-                  {formatMetric(row.key, metric ? metric.value : null)}
-                </td>
-              );
-            })}
-          </tr>
-        ))}
+        {labels.map((row) => {
+          const ttm = sumMetric(shown, row.key);
+          return (
+            <tr key={row.key}>
+              <td>{row.label}</td>
+              <td className="q-ttm">
+                {formatMetric(row.key, ttm)}
+                {row.key === "EPS" && epsChange === "up" ? (
+                  <span className="ttm-arrow up" aria-label="近四季 EPS 上升">
+                    ▲
+                  </span>
+                ) : null}
+                {row.key === "EPS" && epsChange === "down" ? (
+                  <span className="ttm-arrow down" aria-label="近四季 EPS 下降">
+                    ▼
+                  </span>
+                ) : null}
+                {row.key === "EPS" && epsChange === "flat" ? (
+                  <span className="ttm-arrow flat" aria-label="近四季 EPS 持平">
+                    -
+                  </span>
+                ) : null}
+              </td>
+              {shown.map((q) => {
+                const metric = q.metrics.find((m) => m.key === row.key);
+                return (
+                  <td key={q.date}>
+                    {formatMetric(row.key, metric ? metric.value : null)}
+                  </td>
+                );
+              })}
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
@@ -404,14 +511,56 @@ export default function Home() {
     nextYear: number | null;
   }>({ thisYear: null, nextYear: null });
   const [dataAnalysisOpen, setDataAnalysisOpen] = useState(false);
+  const [globalAnalysisOpen, setGlobalAnalysisOpen] = useState(false);
+  const [macroAnalysisOpen, setMacroAnalysisOpen] = useState(false);
+  const [holdingsRefreshNonce, setHoldingsRefreshNonce] = useState(0);
+  const [holdingsRefreshing, setHoldingsRefreshing] = useState(false);
+  const [globalRefreshNonce, setGlobalRefreshNonce] = useState(0);
+  const [globalRefreshing, setGlobalRefreshing] = useState(false);
+  const [macroRefreshNonce, setMacroRefreshNonce] = useState(0);
+  const [macroRefreshing, setMacroRefreshing] = useState(false);
   const [notifyOpen, setNotifyOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [watchlistOpen, setWatchlistOpen] = useState(false);
+  const [goldPickOpen, setGoldPickOpen] = useState(false);
+  const [goldTick, setGoldTick] = useState(0);
   const [newsOpen, setNewsOpen] = useState(false);
   const [addToListOpen, setAddToListOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<MainTab>("tw-stock");
+  // 首次打開才掛載並抓資料，之後保持掛載以保留狀態
+  const [visitedTabs, setVisitedTabs] = useState<Set<MainTab>>(new Set());
   const wl = useWatchlists();
   const msgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // localStorage 只能在掛載後讀，避免伺服器與瀏覽器首次渲染不一致
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(ACTIVE_TAB_KEY);
+      if (MAIN_TABS.some((t) => t.id === saved)) setActiveTab(saved as MainTab);
+    } catch {
+      /* 無法存取 localStorage 時維持預設 tab */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "tw-stock") return;
+    setVisitedTabs((prev) => {
+      if (prev.has(activeTab)) return prev;
+      const next = new Set(prev);
+      next.add(activeTab);
+      return next;
+    });
+  }, [activeTab]);
+
+  function selectTab(tab: MainTab) {
+    setActiveTab(tab);
+    try {
+      window.localStorage.setItem(ACTIVE_TAB_KEY, tab);
+    } catch {
+      /* 容量不足時忽略 */
+    }
+  }
 
   function persistResultToLocalCache(r: StockResult) {
     const stockId = r.stock.stock_id;
@@ -475,7 +624,10 @@ export default function Home() {
     if (localCache?.latestRevenueMonth) {
       params.set("revLatest", localCache.latestRevenueMonth);
     }
-    if (localCache?.latestQuarterDate) {
+    if (
+      localCache?.latestQuarterDate &&
+      (localCache.quarterlyReports?.length ?? 0) >= 5
+    ) {
       params.set("qLatest", localCache.latestQuarterDate);
     }
     if (priceCache?.latestDate) {
@@ -937,6 +1089,18 @@ export default function Home() {
   const changePct =
     change != null && prevClose ? (change / prevClose) * 100 : null;
   const changeCls = change == null ? "na" : change > 0 ? "up" : change < 0 ? "down" : "na";
+  const trailingPe =
+    result && lastPrice
+      ? ttmPe(lastPrice.close, result.quarterlyReports)
+      : null;
+  const trailingPeTone =
+    trailingPe != null
+      ? ttmPeTone(
+          trailingPe,
+          parsePeNumber(peBand.lower),
+          parsePeNumber(peBand.upper)
+        )
+      : "";
 
   const macdAnalysis = useMemo(
     () =>
@@ -1013,6 +1177,22 @@ export default function Home() {
     };
   }, [wl.ready, watchItemsForTouches, syncNotifyTargets]);
 
+  useEffect(() => {
+    if (!wl.ready) return;
+    const onChange = () => setGoldTick((n) => n + 1);
+    window.addEventListener("ff-estimated-eps-changed", onChange);
+    window.addEventListener("ff-pe-band-changed", onChange);
+    return () => {
+      window.removeEventListener("ff-estimated-eps-changed", onChange);
+      window.removeEventListener("ff-pe-band-changed", onChange);
+    };
+  }, [wl.ready]);
+
+  const hasGoldPickHits = useMemo(() => {
+    if (!wl.ready) return false;
+    return hasGoldPicks(wl.lists);
+  }, [wl.ready, wl.lists, goldTick]);
+
   // 「更新」：讀取所有追蹤股票的最新資料並更新本地端（silent 用於開啟時自動更新）
   const refreshAllWatched = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent === true;
@@ -1050,6 +1230,7 @@ export default function Home() {
       if (!silent) flashMsg(`已更新 ${items.length} 檔最新資料`);
     } finally {
       setRefreshing(false);
+      setGoldTick((n) => n + 1);
     }
   }, [watchItemsForTouches, result, search, flashMsg]);
 
@@ -1066,6 +1247,7 @@ export default function Home() {
       }
     } finally {
       setRefreshing(false);
+      setGoldTick((n) => n + 1);
     }
   }, [watchItemsForTouches]);
 
@@ -1110,11 +1292,61 @@ export default function Home() {
           <button
             type="button"
             className="feature-item"
+            onClick={() => setNotifyOpen(true)}
+          >
+            通知
+          </button>
+          <button
+            type="button"
+            className="feature-item"
+            onClick={() => setAboutOpen(true)}
+          >
+            關於
+          </button>
+        </nav>
+      </div>
+
+      <div className="main-tabs" role="tablist" aria-label="主要分類">
+        {MAIN_TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`main-tab-${t.id}`}
+            aria-selected={activeTab === t.id}
+            aria-controls={`main-panel-${t.id}`}
+            className={`main-tab${activeTab === t.id ? " active" : ""}`}
+            onClick={() => selectTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* 用 hidden 而非卸載，切回時保留查詢結果與圖表 */}
+      <div
+        role="tabpanel"
+        id="main-panel-tw-stock"
+        aria-labelledby="main-tab-tw-stock"
+        hidden={activeTab !== "tw-stock"}
+      >
+        <div className="tab-toolbar">
+          <button
+            type="button"
+            className="feature-item"
             onClick={() => void refreshAllWatched()}
             disabled={refreshing}
             title="讀取所有追蹤股票的最新資料並更新本地端"
           >
             {refreshing ? "更新中…" : "更新"}
+          </button>
+          <button
+            type="button"
+            className={`feature-item${hasGoldPickHits ? " gold-pick-flash" : ""}`}
+            onClick={() => setGoldPickOpen(true)}
+            title="現價低於今年或明年合理價的追蹤股票"
+          >
+            撿黃金
           </button>
           <button
             type="button"
@@ -1138,440 +1370,542 @@ export default function Home() {
           >
             數據分析
           </button>
-          <button
-            type="button"
-            className="feature-item"
-            onClick={() => setNotifyOpen(true)}
-          >
-            通知
-          </button>
-          <button
-            type="button"
-            className="feature-item"
-            onClick={() => setAboutOpen(true)}
-          >
-            關於
-          </button>
-        </nav>
-      </div>
+        </div>
 
-      <div className="layout">
-        <section
-          className="panel-frame panel-frame-query"
-          aria-labelledby="panel-query-title"
-        >
-          <h2 id="panel-query-title" className="panel-frame-title">
-            個股查詢
-          </h2>
-          <div className="layout-search">
-            <form
-              className="search"
-              onSubmit={(e) => {
-                e.preventDefault();
-                search(query);
-              }}
-            >
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="例如：台積電 或 2330"
-                autoFocus
-              />
-              <button type="submit" disabled={loading}>
-                {loading ? "查詢中…" : "查詢"}
-              </button>
-            </form>
-          </div>
-        </section>
-
-        <section
-          className="panel-frame panel-frame-market"
-          aria-labelledby="panel-market-title"
-        >
-          <h2 id="panel-market-title" className="panel-frame-title">
-            大盤資訊
-          </h2>
-          <div className="stock-market-row">
-            {taiex && (
-              <span
-                className={`market-metric ${
-                  taiex.change != null
-                    ? taiex.change > 0
-                      ? "up"
-                      : taiex.change < 0
-                        ? "down"
-                        : ""
-                    : ""
-                }`}
-                title={taiex.date}
+        <div className="layout">
+          <section
+            className="panel-frame panel-frame-query"
+            aria-labelledby="panel-query-title"
+          >
+            <h2 id="panel-query-title" className="panel-frame-title">
+              個股查詢
+            </h2>
+            <div className="layout-search">
+              <form
+                className="search"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  search(query);
+                }}
               >
-                <span className="market-metric-label">加權指數</span>
-                <span className="market-metric-value">
-                  {taiex.close.toLocaleString("zh-TW", {
-                    maximumFractionDigits: 2,
-                  })}
-                </span>
-                {taiex.change != null && (
-                  <span className="market-metric-change">
-                    {taiex.change > 0 ? "▲" : taiex.change < 0 ? "▼" : ""}
-                    {taiex.change > 0 ? "+" : ""}
-                    {taiex.change.toFixed(2)}
-                    {taiex.changePct != null &&
-                      ` (${taiex.changePct > 0 ? "+" : ""}${taiex.changePct.toFixed(2)}%)`}
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="例如：台積電 或 2330"
+                  autoFocus
+                />
+                <button type="submit" disabled={loading}>
+                  {loading ? "查詢中…" : "查詢"}
+                </button>
+              </form>
+            </div>
+          </section>
+
+          <section
+            className="panel-frame panel-frame-market"
+            aria-labelledby="panel-market-title"
+          >
+            <h2 id="panel-market-title" className="panel-frame-title">
+              大盤資訊
+            </h2>
+            <div className="stock-market-row">
+              {taiex && (
+                <span
+                  className={`market-metric ${
+                    taiex.change != null
+                      ? taiex.change > 0
+                        ? "up"
+                        : taiex.change < 0
+                          ? "down"
+                          : ""
+                      : ""
+                  }`}
+                  title={taiex.date}
+                >
+                  <span className="market-metric-label">加權指數</span>
+                  <span className="market-metric-value">
+                    {taiex.close.toLocaleString("zh-TW", {
+                      maximumFractionDigits: 2,
+                    })}
                   </span>
-                )}
-              </span>
-            )}
-            {marginMaintenance && (
-              <span
-                className={`market-metric margin-rate tone-${
-                  marginMaintenance.rate < 140
-                    ? "danger"
-                    : marginMaintenance.rate < 160
-                      ? "warn"
-                      : "ok"
-                }`}
-                title={
-                  marginMaintenance.source === "twse_estimate"
-                    ? `${marginMaintenance.date} · 估算`
-                    : marginMaintenance.date
-                }
-              >
-                <span className="market-metric-label">融資維持率</span>
-                <span className="market-metric-value">
-                  {marginMaintenance.rate.toFixed(2)}%
-                </span>
-              </span>
-            )}
-            <StockPriceTargets
-              section="touches"
-              stockId={result?.stock.stock_id ?? ""}
-              latestBar={lastPrice}
-              watchItems={watchItemsForTouches}
-            />
-          </div>
-        </section>
-
-        <section
-          className="panel-frame panel-frame-stock"
-          aria-labelledby="panel-stock-title"
-        >
-          <h2 id="panel-stock-title" className="panel-frame-title">
-            個股資訊
-          </h2>
-
-          <div className="panel-stock-head">
-            {error && <div className="error">{error}</div>}
-            {loading && !result && <div className="skeleton skeleton-head" />}
-            {!result && !loading && !error && (
-              <div className="placeholder placeholder-head">
-                輸入股票名稱或代號，或按上方「追蹤列表」點選，即可查看股票資訊。
-              </div>
-            )}
-            {result && (
-              <div className="stock-head">
-                <div className="stock-identity">
-                  <div className="stock-identity-top">
-                    <span className="stock-title">
-                      <button
-                        type="button"
-                        className="add-to-list-icon"
-                        onClick={handleAddToList}
-                        title="加入追蹤列表"
-                        aria-label="加入追蹤列表"
-                      >
-                        <span aria-hidden>+</span>
-                      </button>
-                      <span className="name">{result.stock.stock_name}</span>
-                    </span>
-                    <span className="code">{result.stock.stock_id}</span>
-                    {marketTypeLabel(result.stock.type) && (
-                      <span className="stock-market-type">
-                        {marketTypeLabel(result.stock.type)}
-                      </span>
-                    )}
-                  </div>
-                  {lastPrice && (
-                    <span
-                      className={`price-block ${changeCls}`}
-                      title={`${lastPrice.date} 收盤`}
-                    >
-                      <span className="price-value">
-                        {lastPrice.close.toLocaleString("zh-TW")}
-                      </span>
-                      {change != null && (
-                        <span className="price-change">
-                          {change > 0 ? "▲" : change < 0 ? "▼" : ""}
-                          {change > 0 ? "+" : ""}
-                          {change.toFixed(2)}
-                          {changePct != null &&
-                            ` (${changePct > 0 ? "+" : ""}${changePct.toFixed(
-                              2
-                            )}%)`}
-                        </span>
-                      )}
+                  {taiex.change != null && (
+                    <span className="market-metric-change">
+                      {taiex.change > 0 ? "▲" : taiex.change < 0 ? "▼" : ""}
+                      {taiex.change > 0 ? "+" : ""}
+                      {taiex.change.toFixed(2)}
+                      {taiex.changePct != null &&
+                        ` (${taiex.changePct > 0 ? "+" : ""}${taiex.changePct.toFixed(2)}%)`}
                     </span>
                   )}
+                </span>
+              )}
+              {marginMaintenance && (
+                <span
+                  className={`market-metric margin-rate tone-${
+                    marginMaintenance.rate < 140
+                      ? "danger"
+                      : marginMaintenance.rate < 160
+                        ? "warn"
+                        : "ok"
+                  }`}
+                  title={
+                    marginMaintenance.source === "twse_estimate"
+                      ? `${marginMaintenance.date} · 估算`
+                      : marginMaintenance.date
+                  }
+                >
+                  <span className="market-metric-label">融資維持率</span>
+                  <span className="market-metric-value">
+                    {marginMaintenance.rate.toFixed(2)}%
+                  </span>
+                </span>
+              )}
+              <StockPriceTargets
+                section="touches"
+                stockId={result?.stock.stock_id ?? ""}
+                latestBar={lastPrice}
+                watchItems={watchItemsForTouches}
+              />
+            </div>
+          </section>
+
+          <section
+            className="panel-frame panel-frame-stock"
+            aria-labelledby="panel-stock-title"
+          >
+            <h2 id="panel-stock-title" className="panel-frame-title">
+              個股資訊
+            </h2>
+
+            <div className="panel-stock-head">
+              {error && <div className="error">{error}</div>}
+              {loading && !result && <div className="skeleton skeleton-head" />}
+              {!result && !loading && !error && (
+                <div className="placeholder placeholder-head">
+                  輸入股票名稱或代號，或按上方「追蹤列表」點選，即可查看股票資訊。
                 </div>
-                <div className="stock-head-meta">
-                  <div
-                    className="stock-pe-valuation"
-                    title="本益比（由使用者自行輸入）"
-                  >
-                    <span className="stock-head-box-title">本益比</span>
-                    <label className="stock-pe-field">
-                      <span className="stock-pe-field-label">下緣</span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        className="stock-pe-input"
-                        value={peBand.lower}
-                        onChange={(e) => updatePeBand("lower", e.target.value)}
-                        placeholder="—"
-                        aria-label="本益比下緣"
-                      />
-                    </label>
-                    <label className="stock-pe-field">
-                      <span className="stock-pe-field-label">合理</span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        className="stock-pe-input"
-                        value={peBand.fair}
-                        onChange={(e) => updatePeBand("fair", e.target.value)}
-                        placeholder="—"
-                        aria-label="本益比合理"
-                      />
-                    </label>
-                    <label className="stock-pe-field">
-                      <span className="stock-pe-field-label">上緣</span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        className="stock-pe-input"
-                        value={peBand.upper}
-                        onChange={(e) => updatePeBand("upper", e.target.value)}
-                        placeholder="—"
-                        aria-label="本益比上緣"
-                      />
-                    </label>
-                  </div>
-                  <div
-                    className="stock-est-price"
-                    title="預估股價 = 預估 EPS × 本益比"
-                  >
-                    <span className="stock-head-box-title">預估股價</span>
-                    <div className="stock-est-price-row stock-est-price-head">
-                      <span className="stock-est-price-year" aria-hidden />
-                      <span className="stock-est-price-cell">下緣</span>
-                      <span className="stock-est-price-cell">合理</span>
-                      <span className="stock-est-price-cell">上緣</span>
-                    </div>
-                    <div className="stock-est-price-row">
-                      <span className="stock-est-price-year">今年</span>
-                      <span className="stock-est-price-cell num">
-                        {formatEstPrice(estEps.thisYear, peBand.lower)}
-                      </span>
-                      <span className="stock-est-price-cell num">
-                        {formatEstPrice(estEps.thisYear, peBand.fair)}
-                      </span>
-                      <span className="stock-est-price-cell num">
-                        {formatEstPrice(estEps.thisYear, peBand.upper)}
-                      </span>
-                    </div>
-                    <div className="stock-est-price-row">
-                      <span className="stock-est-price-year">明年</span>
-                      <span className="stock-est-price-cell num">
-                        {formatEstPrice(estEps.nextYear, peBand.lower)}
-                      </span>
-                      <span className="stock-est-price-cell num">
-                        {formatEstPrice(estEps.nextYear, peBand.fair)}
-                      </span>
-                      <span className="stock-est-price-cell num">
-                        {formatEstPrice(estEps.nextYear, peBand.upper)}
-                      </span>
-                    </div>
-                  </div>
-                  <StockPriceTargets
-                    section="form"
-                    stockId={result.stock.stock_id}
-                    latestBar={lastPrice}
-                    watchItems={watchItemsForTouches}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {(wl.ready || result) && (
-            <div className="panel-stock-body">
-              <aside className="panel-stock-left col-left">
-                {result && (
-                  <>
-                    <StockMemo
-                      stockId={result.stock.stock_id}
-                      stockName={result.stock.stock_name}
-                    />
-                    {wl.ready && (
-                      <ChipPanel
-                        snapshots={chipSnapshots}
-                        loading={chipLoading}
-                        error={chipError}
-                        filterStockId={result.stock.stock_id}
-                        filterStockName={result.stock.stock_name}
-                        listName={wl.selectedList?.name ?? null}
-                        itemCount={wl.selectedList?.items.length ?? 0}
-                        onPickStock={(id) => search(id)}
-                      />
-                    )}
-                    <section className="section">
-                      <h2>
-                        <span className="dot" />
-                        股東會
-                      </h2>
-                      {meetings.length > 0 ? (
-                        meetings.map((m, i) => (
-                          <ShareholderCard
-                            m={m}
-                            key={`s${i}`}
-                            activeId={meetingContent?.id ?? null}
-                            onOpenNews={() => handleOpenShareholderNews(m)}
-                          />
-                        ))
-                      ) : (
-                        <p className="empty">
-                          查無近期股東會資料（多於 4-8 月召開）。可至{" "}
-                          <a
-                            className="muted-link"
-                            href={result.mopsShareholderUrl}
-                            target="_blank"
-                            rel="noreferrer"
+              )}
+              {result && (
+                <div className="stock-head">
+                  <div className="stock-identity">
+                    <div className="stock-identity-main">
+                      <div className="stock-identity-top">
+                        <span className="stock-title">
+                          <button
+                            type="button"
+                            className="add-to-list-icon"
+                            onClick={handleAddToList}
+                            title="加入追蹤列表"
+                            aria-label="加入追蹤列表"
                           >
-                            公開資訊觀測站・股東會
-                          </a>{" "}
-                          查詢。
-                        </p>
-                      )}
-                    </section>
-
-                    <section className="section">
-                      <h2>
-                        <span className="dot" />
-                        法人說明會
-                      </h2>
-                      {latestConference ? (
-                        <ConferenceCard
-                          c={latestConference}
-                          activeId={meetingContent?.id ?? null}
-                          onOpenNews={() =>
-                            handleOpenConferenceNews(latestConference)
-                          }
-                        />
-                      ) : (
-                        <p className="empty">
-                          查無近期法說會資料。可至{" "}
-                          <a
-                            className="muted-link"
-                            href={result.mopsConferenceUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            公開資訊觀測站・法說會
-                          </a>{" "}
-                          查詢。
-                        </p>
-                      )}
-                    </section>
-                  </>
-                )}
-              </aside>
-
-              <div className="panel-stock-right">
-                {result && (
-                  <>
-                    <div className="stock-events-row">
-                      <StockInsightsPanel
-                        section="events"
-                        events={upcomingStockEvents}
-                        eventsLoading={false}
-                        analysis={null}
-                      />
-                      <div className="stock-events-row-side">
-                        <StockInsightsPanel
-                          section="macd"
-                          events={[]}
-                          eventsLoading={false}
-                          analysis={macdAnalysis}
-                        />
-                        {marginUsage && (
-                          <span
-                            className={`stock-margin-usage tone-${
-                              marginUsage.rate >= 80
-                                ? "danger"
-                                : marginUsage.rate >= 60
-                                  ? "warn"
-                                  : "ok"
-                            }`}
-                            title={`融資使用率（${marginUsage.date}）· 餘額 ${marginUsage.balance.toLocaleString("zh-TW")}／限額 ${marginUsage.limit.toLocaleString("zh-TW")} 張`}
-                          >
-                            <span className="stock-margin-usage-label">
-                              融資使用率
-                            </span>
-                            <span className="stock-margin-usage-value">
-                              {marginUsage.rate.toFixed(2)}%
-                            </span>
+                            <span aria-hidden>+</span>
+                          </button>
+                          <span className="name">{result.stock.stock_name}</span>
+                        </span>
+                        <span className="code">{result.stock.stock_id}</span>
+                        {marketTypeLabel(result.stock.type) && (
+                          <span className="stock-market-type">
+                            {marketTypeLabel(result.stock.type)}
                           </span>
                         )}
                       </div>
-                    </div>
-
-                    <section className="col-right">
-                      {addMsg && <div className="toast">{addMsg}</div>}
-
-                      {result.warnings.map((w, i) => (
-                        <div className="warn" key={i}>
-                          ⚠️ {w}
-                        </div>
-                      ))}
-
-                      <DisplayBlock
-                        stockId={result.stock.stock_id}
-                        prices={result.dailyPrices}
-                        meetingContent={meetingContent}
-                        meetingLoading={meetingLoading}
-                      />
-
-                      <section className="section">
-                        <h2>
-                          <span className="dot" />
-                          近三個月月營收增長
-                        </h2>
-                        <RevenueSection data={result.monthlyRevenue} />
-                      </section>
-
-                      <section className="section">
-                        <h2>
-                          <span className="dot" />
-                          近四季季報
-                        </h2>
-                        <ReportsSection data={result.quarterlyReports} />
-                        <p
-                          style={{
-                            marginTop: 12,
-                            fontSize: 12,
-                            color: "#9aa7c2",
-                          }}
+                      {lastPrice && (
+                        <span
+                          className={`price-block ${changeCls}`}
+                          title={`${lastPrice.date} 收盤`}
                         >
-                          金額單位：元（自動換算為億/萬）。資料來源：FinMind。
-                        </p>
-                      </section>
-                    </section>
-                  </>
-                )}
-              </div>
+                          <span className="price-value">
+                            {lastPrice.close.toLocaleString("zh-TW")}
+                          </span>
+                          {change != null && (
+                            <span className="price-change">
+                              {change > 0 ? "▲" : change < 0 ? "▼" : ""}
+                              {change > 0 ? "+" : ""}
+                              {change.toFixed(2)}
+                              {changePct != null &&
+                                ` (${changePct > 0 ? "+" : ""}${changePct.toFixed(
+                                  2
+                                )}%)`}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                    {result.dividendYield &&
+                      Number.isFinite(result.dividendYield.yieldPct) &&
+                      result.dividendYield.yieldPct > 0 && (
+                        <section
+                          className="section stock-dividend-yield"
+                          title={`證交所・最近一年度現金股利／收盤價（${result.dividendYield.date}）`}
+                        >
+                          <h2>
+                            <span className="dot" />
+                            殖利率
+                          </h2>
+                          <span className="stock-dividend-yield-value">
+                            {result.dividendYield.yieldPct.toFixed(2)}%
+                          </span>
+                        </section>
+                      )}
+                  </div>
+                  <div className="stock-head-meta">
+                    <div
+                      className="stock-pe-valuation"
+                      title="目前＝現價÷近四季 EPS；下緣／合理／上緣由使用者自行輸入"
+                    >
+                      <span className="stock-head-box-title">本益比</span>
+                      <div className="stock-pe-field">
+                        <span className="stock-pe-field-label">目前</span>
+                        <span
+                          className={`stock-pe-current${trailingPeTone ? ` ${trailingPeTone}` : ""}`}
+                          title="現價 ÷ 近四季 EPS（TTM）"
+                        >
+                          {trailingPe != null ? trailingPe.toFixed(1) : "—"}
+                        </span>
+                      </div>
+                      <label className="stock-pe-field">
+                        <span className="stock-pe-field-label">下緣</span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          className="stock-pe-input"
+                          value={peBand.lower}
+                          onChange={(e) => updatePeBand("lower", e.target.value)}
+                          placeholder="—"
+                          aria-label="本益比下緣"
+                        />
+                      </label>
+                      <label className="stock-pe-field">
+                        <span className="stock-pe-field-label">合理</span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          className="stock-pe-input"
+                          value={peBand.fair}
+                          onChange={(e) => updatePeBand("fair", e.target.value)}
+                          placeholder="—"
+                          aria-label="本益比合理"
+                        />
+                      </label>
+                      <label className="stock-pe-field">
+                        <span className="stock-pe-field-label">上緣</span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          className="stock-pe-input"
+                          value={peBand.upper}
+                          onChange={(e) => updatePeBand("upper", e.target.value)}
+                          placeholder="—"
+                          aria-label="本益比上緣"
+                        />
+                      </label>
+                    </div>
+                    <div
+                      className="stock-est-price"
+                      title="預估股價 = 預估 EPS × 本益比"
+                    >
+                      <span className="stock-head-box-title">預估股價</span>
+                      <div className="stock-est-price-row stock-est-price-head">
+                        <span className="stock-est-price-year" aria-hidden />
+                        <span className="stock-est-price-cell">下緣</span>
+                        <span className="stock-est-price-cell">合理</span>
+                        <span className="stock-est-price-cell">上緣</span>
+                      </div>
+                      <div className="stock-est-price-row">
+                        <span className="stock-est-price-year">今年</span>
+                        <span className="stock-est-price-cell num">
+                          {formatEstPrice(estEps.thisYear, peBand.lower)}
+                        </span>
+                        <span className="stock-est-price-cell num">
+                          {formatEstPrice(estEps.thisYear, peBand.fair)}
+                        </span>
+                        <span className="stock-est-price-cell num">
+                          {formatEstPrice(estEps.thisYear, peBand.upper)}
+                        </span>
+                      </div>
+                      <div className="stock-est-price-row">
+                        <span className="stock-est-price-year">明年</span>
+                        <span className="stock-est-price-cell num">
+                          {formatEstPrice(estEps.nextYear, peBand.lower)}
+                        </span>
+                        <span className="stock-est-price-cell num">
+                          {formatEstPrice(estEps.nextYear, peBand.fair)}
+                        </span>
+                        <span className="stock-est-price-cell num">
+                          {formatEstPrice(estEps.nextYear, peBand.upper)}
+                        </span>
+                      </div>
+                    </div>
+                    <StockPriceTargets
+                      section="form"
+                      stockId={result.stock.stock_id}
+                      latestBar={lastPrice}
+                      watchItems={watchItemsForTouches}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </section>
+
+            {(wl.ready || result) && (
+              <div className="panel-stock-body">
+                <aside className="panel-stock-left col-left">
+                  {result && (
+                    <>
+                      <StockMemo
+                        stockId={result.stock.stock_id}
+                        stockName={result.stock.stock_name}
+                      />
+                      {wl.ready && (
+                        <ChipPanel
+                          snapshots={chipSnapshots}
+                          loading={chipLoading}
+                          error={chipError}
+                          filterStockId={result.stock.stock_id}
+                          filterStockName={result.stock.stock_name}
+                          listName={wl.selectedList?.name ?? null}
+                          itemCount={wl.selectedList?.items.length ?? 0}
+                          onPickStock={(id) => search(id)}
+                        />
+                      )}
+                      <section className="section">
+                        <h2>
+                          <span className="dot" />
+                          股東會
+                        </h2>
+                        {meetings.length > 0 ? (
+                          meetings.map((m, i) => (
+                            <ShareholderCard
+                              m={m}
+                              key={`s${i}`}
+                              activeId={meetingContent?.id ?? null}
+                              onOpenNews={() => handleOpenShareholderNews(m)}
+                            />
+                          ))
+                        ) : (
+                          <p className="empty">
+                            查無近期股東會資料（多於 4-8 月召開）。可至{" "}
+                            <a
+                              className="muted-link"
+                              href={result.mopsShareholderUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              公開資訊觀測站・股東會
+                            </a>{" "}
+                            查詢。
+                          </p>
+                        )}
+                      </section>
+
+                      <section className="section">
+                        <h2>
+                          <span className="dot" />
+                          法人說明會
+                        </h2>
+                        {latestConference ? (
+                          <ConferenceCard
+                            c={latestConference}
+                            activeId={meetingContent?.id ?? null}
+                            onOpenNews={() =>
+                              handleOpenConferenceNews(latestConference)
+                            }
+                          />
+                        ) : (
+                          <p className="empty">
+                            查無近期法說會資料。可至{" "}
+                            <a
+                              className="muted-link"
+                              href={result.mopsConferenceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              公開資訊觀測站・法說會
+                            </a>{" "}
+                            查詢。
+                          </p>
+                        )}
+                      </section>
+                    </>
+                  )}
+                </aside>
+
+                <div className="panel-stock-right">
+                  {result && (
+                    <>
+                      <div className="stock-events-row">
+                        <StockInsightsPanel
+                          section="events"
+                          events={upcomingStockEvents}
+                          eventsLoading={false}
+                          analysis={null}
+                        />
+                        <div className="stock-events-row-side">
+                          <StockInsightsPanel
+                            section="macd"
+                            events={[]}
+                            eventsLoading={false}
+                            analysis={macdAnalysis}
+                          />
+                          {marginUsage && (
+                            <span
+                              className={`stock-margin-usage tone-${
+                                marginUsage.rate >= 80
+                                  ? "danger"
+                                  : marginUsage.rate >= 60
+                                    ? "warn"
+                                    : "ok"
+                              }`}
+                              title={`融資使用率（${marginUsage.date}）· 餘額 ${marginUsage.balance.toLocaleString("zh-TW")}／限額 ${marginUsage.limit.toLocaleString("zh-TW")} 張`}
+                            >
+                              <span className="stock-margin-usage-label">
+                                融資使用率
+                              </span>
+                              <span className="stock-margin-usage-value">
+                                {marginUsage.rate.toFixed(2)}%
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <section className="col-right">
+                        {addMsg && <div className="toast">{addMsg}</div>}
+
+                        {result.warnings.map((w, i) => (
+                          <div className="warn" key={i}>
+                            ⚠️ {w}
+                          </div>
+                        ))}
+
+                        <DisplayBlock
+                          stockId={result.stock.stock_id}
+                          prices={result.dailyPrices}
+                          meetingContent={meetingContent}
+                          meetingLoading={meetingLoading}
+                        />
+
+                        <section className="section">
+                          <h2>
+                            <span className="dot" />
+                            近三個月月營收增長
+                          </h2>
+                          <RevenueSection data={result.monthlyRevenue} />
+                        </section>
+
+                        <section className="section">
+                          <h2>
+                            <span className="dot" />
+                            近四季季報
+                          </h2>
+                          <ReportsSection data={result.quarterlyReports} />
+                          <p
+                            style={{
+                              marginTop: 12,
+                              fontSize: 12,
+                              color: "#9aa7c2",
+                            }}
+                          >
+                            金額單位：元（自動換算為億/萬）。資料來源：FinMind。
+                          </p>
+                        </section>
+                      </section>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+
+      <div
+        role="tabpanel"
+        id="main-panel-global"
+        aria-labelledby="main-tab-global"
+        hidden={activeTab !== "global"}
+      >
+        <div className="tab-toolbar">
+          <button
+            type="button"
+            className="feature-item"
+            onClick={() => setGlobalRefreshNonce((n) => n + 1)}
+            disabled={globalRefreshing}
+            title="重新抓取所有國際指數資料"
+          >
+            {globalRefreshing ? "更新中…" : "更新"}
+          </button>
+          <button
+            type="button"
+            className="feature-item"
+            onClick={() => setGlobalAnalysisOpen(true)}
+          >
+            數據分析
+          </button>
+        </div>
+        {visitedTabs.has("global") && (
+          <GlobalIndexWorkspace
+            refreshNonce={globalRefreshNonce}
+            onRefreshingChange={setGlobalRefreshing}
+          />
+        )}
+      </div>
+
+      <div
+        role="tabpanel"
+        id="main-panel-macro"
+        aria-labelledby="main-tab-macro"
+        hidden={activeTab !== "macro"}
+      >
+        <div className="tab-toolbar">
+          <button
+            type="button"
+            className="feature-item"
+            onClick={() => setMacroRefreshNonce((n) => n + 1)}
+            disabled={macroRefreshing}
+            title="重新抓取總經資料"
+          >
+            {macroRefreshing ? "更新中…" : "更新"}
+          </button>
+          <button
+            type="button"
+            className="feature-item"
+            onClick={() => setMacroAnalysisOpen(true)}
+          >
+            數據分析
+          </button>
+        </div>
+        {visitedTabs.has("macro") && (
+          <MacroWorkspace
+            refreshNonce={macroRefreshNonce}
+            onRefreshingChange={setMacroRefreshing}
+          />
+        )}
+      </div>
+
+      <div
+        role="tabpanel"
+        id="main-panel-holdings"
+        aria-labelledby="main-tab-holdings"
+        hidden={activeTab !== "holdings"}
+      >
+        <div className="tab-toolbar">
+          <button
+            type="button"
+            className="feature-item"
+            onClick={() => setHoldingsRefreshNonce((n) => n + 1)}
+            disabled={holdingsRefreshing}
+            title="重新抓取庫存股票的目前價格"
+          >
+            {holdingsRefreshing ? "更新中…" : "更新"}
+          </button>
+        </div>
+        {visitedTabs.has("holdings") && (
+          <HoldingsWorkspace
+            refreshNonce={holdingsRefreshNonce}
+            onRefreshingChange={setHoldingsRefreshing}
+          />
+        )}
       </div>
 
       <footer>
@@ -1582,6 +1916,15 @@ export default function Home() {
         open={dataAnalysisOpen}
         onClose={() => setDataAnalysisOpen(false)}
       />
+      <DataAnalysisModal
+        open={globalAnalysisOpen}
+        onClose={() => setGlobalAnalysisOpen(false)}
+        variant="index"
+      />
+      <MacroAnalysisModal
+        open={macroAnalysisOpen}
+        onClose={() => setMacroAnalysisOpen(false)}
+      />
       <NewsModal
         open={newsOpen}
         onClose={() => setNewsOpen(false)}
@@ -1591,6 +1934,12 @@ export default function Home() {
         open={watchlistOpen}
         onClose={() => setWatchlistOpen(false)}
         wl={wl}
+        onPickStock={(id) => search(id)}
+      />
+      <GoldPickModal
+        open={goldPickOpen}
+        onClose={() => setGoldPickOpen(false)}
+        lists={wl.lists}
         onPickStock={(id) => search(id)}
       />
       <NotifySettings
@@ -1626,9 +1975,10 @@ export default function Home() {
               <strong>個股資訊</strong>
               <ul className="about-sublist">
                 <li>股價與漲跌</li>
+                <li>最近一年度殖利率（證交所）</li>
                 <li>融資使用率</li>
                 <li>預估 EPS（今年／明年，自行輸入）</li>
-                <li>本益比區間（下緣／合理／上緣，自行輸入）</li>
+                <li>本益比（目前＝現價÷近四季 EPS；下緣／合理／上緣自行輸入）</li>
                 <li>預估股價（預估 EPS × 本益比，自動換算今年／明年上緣・合理・下緣）</li>
                 <li>
                   MACD 三層分析（戰術／結構／進出場）；進出場標籤為短建議（等金叉、可偏多進場、暫緩；等死叉、可減碼／出場、訊號取消）
@@ -1636,17 +1986,37 @@ export default function Home() {
                 <li>大戶籌碼（集保股權分散）</li>
                 <li>即將到來的已公告事件</li>
                 <li>股東會、法人說明會</li>
-                <li>K 線圖</li>
+                <li>K 線圖（含 5 日／20 日均量）</li>
                 <li>近三個月月營收、近四季季報</li>
               </ul>
             </li>
             <li>
               <strong>追蹤列表</strong>
-              ：建立多個列表、加入／管理股票，並作為籌碼與觸價通知彙整來源。
+              ：建立多個列表、加入／管理股票，並作為籌碼與觸價通知彙整來源。台股個股「撿黃金」會列出各列表中現價低於今年或明年下緣／合理價的股票與潛在獲利％；低於下緣者只出現在下緣群組。
+            </li>
+            <li>
+              <strong>國際指數</strong>
+              ：台灣指數、櫃買指數、費城半導體、那斯達克、KOSPI、美元指數、VIX
+              恐慌指數日 K（含 MA5／10／20／60／120／240 與 MACD）；台灣指數與櫃買指數另含
+              5 日／20 日均量。
+            </li>
+            <li>
+              <strong>總經</strong>
+              ：市場分析依 VIX、公債殖利率與美元指數對應九種共用層狀況；美國
+              10 年期與 2 年期公債殖利率走勢（含利差）；台灣／美國製造業
+              PMI（50 榮枯線）；HY 高收益債利差；Fed Watch
+              顯示目前聯邦基金利率目標區間、有效利率與走勢，並列出接下來兩次
+              FOMC 會議日期與台灣時間公布時點，並連結 CME FedWatch。
+            </li>
+            <li>
+              <strong>股票庫存</strong>
+              ：先建立帳號，再輸入股票名稱或代號、股數與總成本加入目前帳號。同一帳號同一檔會合併股數與成本；以帳號下拉選單切換，表格、圓餅與總損益一次只顯示該帳號，比例以該帳號市值計。資料僅存在瀏覽器，不會從集保匯入。
             </li>
             <li>
               <strong>數據分析</strong>
-              ：說明 MACD 三層分析邏輯與判讀方式。
+              ：台股個股 tab 內說明 MACD 三層分析與均量用法；國際指數 tab
+              內說明均量用法；總經 tab 內說明利率、公債殖利率、PMI 與 HY
+              利差對股市的影響，並以市場分析對應九種狀況。
             </li>
             <li>
               <strong>通知</strong>
@@ -1660,7 +2030,10 @@ export default function Home() {
           <h4 className="about-heading">資料來源</h4>
           <p className="modal-text about-sources">
             FinMind、證交所／櫃買相關公開資料、公開資訊觀測站（MOPS）、集保
-            TDCC 開放資料等。
+            TDCC 開放資料、美國財政部公債殖利率、紐約聯準會聯邦基金利率、聯準會
+            FOMC 會議行事曆、Yahoo
+            Finance（國際指數）、中經院台灣製造業 PMI、ISM 製造業 PMI、FRED
+            ICE BofA 高收益債 OAS 等。
           </p>
           <p className="modal-text about-sources">
             圖表由{" "}

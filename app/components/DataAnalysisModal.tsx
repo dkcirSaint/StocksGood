@@ -1,16 +1,20 @@
 "use client";
 
 import Modal from "./Modal";
+import VolumeMaAnalysis from "./VolumeMaAnalysis";
 
 export default function DataAnalysisModal({
   open,
   onClose,
+  variant = "stock",
 }: {
   open: boolean;
   onClose: () => void;
+  variant?: "stock" | "index";
 }) {
   return (
     <Modal open={open} title="數據分析" onClose={onClose}>
+      {variant === "stock" && (
       <section className="analysis-section">
         <h4 className="analysis-heading">MACD 三層分析</h4>
         <p className="analysis-note">
@@ -83,6 +87,26 @@ export default function DataAnalysisModal({
           </li>
         </ul>
       </section>
+      )}
+      {variant === "index" && (
+      <section className="analysis-section">
+        <h4 className="analysis-heading">VIX 恐慌指數</h4>
+        <p className="analysis-note">
+          CBOE 波動率指數，衡量市場對未來 30 天股價波動的預期。高＝恐慌、低＝偏自滿。
+        </p>
+        <ul className="analysis-rules">
+          <li>
+            <span className="analysis-tag high">急升</span>
+            常伴隨風險性資產賣壓，資金偏向避險
+          </li>
+          <li>
+            <span className="analysis-tag low">低檔盤整</span>
+            市場偏自滿，一旦意外衝擊，波動可能快速放大
+          </li>
+        </ul>
+      </section>
+      )}
+      <VolumeMaAnalysis />
     </Modal>
   );
 }

@@ -2,14 +2,26 @@
 
 import type { LargeHolderSnapshot } from "@/lib/types";
 import {
+  formatPeople,
   formatRatioPct,
-  formatWowChange,
+  formatWowWithPeople,
 } from "@/lib/chip-utils";
 
-function WowCell({ change }: { change: number | null }) {
-  if (change == null) return <span className="chip-na">—</span>;
-  const cls = change > 0 ? "up" : change < 0 ? "down" : "na";
-  return <span className={cls}>{formatWowChange(change)}</span>;
+function WowCell({
+  change,
+  peopleChange,
+}: {
+  change: number | null;
+  peopleChange: number | null;
+}) {
+  if (change == null && peopleChange == null) {
+    return <span className="chip-na">—</span>;
+  }
+  const dir = change ?? peopleChange ?? 0;
+  const cls = dir > 0 ? "up" : dir < 0 ? "down" : "na";
+  return (
+    <span className={cls}>{formatWowWithPeople(change, peopleChange)}</span>
+  );
 }
 
 function TierTable({
@@ -40,6 +52,7 @@ function TierTable({
             <tr>
               <th>日期</th>
               <th>大戶持股比例</th>
+              <th>人數</th>
               <th>較上期</th>
             </tr>
           </thead>
@@ -48,8 +61,16 @@ function TierTable({
               <tr key={row.id}>
                 <td className="chip-date">{row.date}</td>
                 <td className="chip-ratio">{formatRatioPct(row.ratio)}</td>
+                <td className="chip-people">
+                  {row.people != null ? formatPeople(row.people) : (
+                    <span className="chip-na">—</span>
+                  )}
+                </td>
                 <td className="chip-wow">
-                  <WowCell change={row.wowChange} />
+                  <WowCell
+                    change={row.wowChange}
+                    peopleChange={row.wowPeople}
+                  />
                 </td>
               </tr>
             ))}

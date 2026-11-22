@@ -24,6 +24,7 @@ body {
 }
 
 body {
+  min-height: 100vh;
   background: radial-gradient(
       1200px 600px at 80% -10%,
       #1a2b55 0,
@@ -99,6 +100,459 @@ body {
 .feature-item:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.feature-item.gold-pick-flash {
+  font-weight: 700;
+  animation: gold-pick-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes gold-pick-pulse {
+  0%,
+  100% {
+    color: var(--warn);
+  }
+  50% {
+    color: rgba(246, 196, 84, 0.28);
+  }
+}
+
+.feature-item.gold-pick-flash:hover {
+  border-color: var(--warn);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feature-item.gold-pick-flash {
+    animation: none;
+    color: var(--warn);
+  }
+}
+
+/* ===== Main tabs: 台股個股 / 總經 ===== */
+.main-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--card-border);
+}
+
+.main-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 8px 18px;
+  color: var(--text-dim);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.main-tab:hover {
+  color: var(--text);
+}
+
+.main-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.tab-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+/* ===== 國際指數工作區 ===== */
+.global-index-workspace {
+  margin-top: 0;
+  padding-top: 16px;
+}
+
+.global-index-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+
+.global-index-name {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.global-index-close {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.global-index-change {
+  margin-left: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.global-index-date {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* ===== 總經工作區 ===== */
+.macro-workspace {
+  margin-top: 0;
+  padding-top: 16px;
+}
+
+.market-analysis {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.market-regime-now {
+  background: var(--bg-soft);
+  border: 1px solid var(--regime-tone, var(--card-border));
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+
+.market-regime-now.tone-bull,
+.market-regime-item.tone-bull {
+  --regime-tone: var(--accent);
+}
+
+.market-regime-now.tone-watch,
+.market-regime-item.tone-watch {
+  --regime-tone: var(--warn);
+}
+
+.market-regime-now.tone-bear,
+.market-regime-item.tone-bear {
+  --regime-tone: var(--up);
+}
+
+.market-regime-kicker {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.market-regime-title {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--regime-tone, var(--accent));
+}
+
+.market-regime-badge {
+  display: inline-block;
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.market-regime-meaning {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.market-regime-basis {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.market-analysis-heading {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.market-regime-reasons {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-dim);
+}
+
+.market-regime-reasons li {
+  margin-bottom: 8px;
+}
+
+.market-regime-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.market-regime-item {
+  background: var(--bg-soft);
+  border: 1px solid var(--regime-tone, var(--card-border));
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.market-regime-item.current {
+  box-shadow: inset 0 0 0 1px var(--regime-tone, var(--accent));
+}
+
+.market-regime-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  margin-bottom: 4px;
+}
+
+.market-regime-item-id {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.market-regime-item-name {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.market-regime-item-hit {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--regime-tone, var(--accent));
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.market-regime-item.tone-watch .market-regime-item-hit {
+  color: #1a1f2e;
+}
+
+.market-regime-item-manual {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.market-regime-item p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.market-regime-item .market-regime-basis {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.market-pmi-sides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.market-pmi-card {
+  background: var(--bg-soft);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.market-pmi-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+}
+
+.market-pmi-label {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.market-pmi-value {
+  margin-left: auto;
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.market-pmi-meta {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.market-pmi-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+}
+
+.market-pmi-tag.expand {
+  color: var(--up);
+  border-color: var(--up);
+}
+
+.market-pmi-tag.contract {
+  color: var(--down);
+  border-color: var(--down);
+}
+
+.market-pmi-combo {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.market-pmi-combo strong {
+  font-weight: 700;
+}
+
+.fedwatch {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.fedwatch-title {
+  margin: 0;
+  font-size: 15px;
+}
+
+.fedwatch-rate {
+  gap: 8px;
+}
+
+.fedwatch-rate-kicker {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.fedwatch-rate-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+}
+
+.fedwatch-rate-label {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.fedwatch-rate-meta {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.fedwatch-rate-source {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.fomc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.fomc-card {
+  background: var(--bg-soft);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fomc-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+}
+
+.fomc-card-date {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.fomc-card-week {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.fomc-card-badge {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--warn);
+  color: var(--warn);
+}
+
+.fomc-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.fomc-card-countdown {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.fedwatch-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  font-size: 13px;
+}
+
+.fedwatch-links a:not(.btn) {
+  color: var(--accent);
+}
+
+.fedwatch-links a.btn {
+  text-decoration: none;
+}
+
+.fedwatch-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
 }
 
 .notify-section {
@@ -579,6 +1033,11 @@ body {
     min-height: 0;
   }
 
+  .main-tab {
+    flex: 1;
+    padding: 8px 10px;
+  }
+
   .layout {
     grid-template-columns: 1fr;
     grid-template-rows: auto;
@@ -710,17 +1169,28 @@ body {
   min-width: 0;
 }
 
-/* 股名左、股價右：左緣／寬度對齊大戶籌碼，高度對齊關鍵價格 */
+/* 股名左、股價右：左緣／寬度對齊大戶籌碼與筆記；名稱在殖利率框上方垂直置中 */
 .stock-identity {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
   display: flex;
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: stretch;
+  gap: 8px;
   align-self: stretch;
+}
+
+.stock-identity-main {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
 }
 
 .stock-identity-top {
@@ -729,6 +1199,30 @@ body {
   gap: 8px;
   min-width: 0;
   flex: 1 1 auto;
+}
+
+.stock-identity .stock-dividend-yield {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 0;
+  padding: 8px 16px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.stock-identity .stock-dividend-yield h2 {
+  margin: 0;
+}
+
+.stock-dividend-yield-value {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  margin-left: auto;
 }
 
 /* 上市／上櫃／興櫃：置於股票名稱（代號）與股價之間 */
@@ -1386,6 +1880,25 @@ body {
   border-color: var(--accent);
 }
 
+.stock-head .stock-pe-current {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 4ch;
+  box-sizing: content-box;
+  min-height: 32px;
+  height: 32px;
+  padding: 4px 8px;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
 .stock-head .stock-est-price {
   align-self: stretch;
   display: grid;
@@ -1814,6 +2327,27 @@ table.fin thead th {
   font-weight: 600;
 }
 
+table.fin th.q-ttm,
+table.fin td.q-ttm {
+  font-weight: 700;
+}
+
+table.fin td.q-ttm {
+  white-space: nowrap;
+}
+
+table.fin td.q-ttm .ttm-arrow {
+  margin-left: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  vertical-align: 1px;
+}
+
+table.fin td.q-ttm .ttm-arrow.flat {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
 .conf {
   border: 1px solid var(--card-border);
   border-radius: 12px;
@@ -2189,6 +2723,7 @@ footer {
 
 .display-tabs {
   margin-bottom: 14px;
+  flex-wrap: wrap;
 }
 
 .seg {
@@ -2513,6 +3048,90 @@ footer {
 /* 通知視窗內容較多，略加寬 */
 .modal-card:has(.notify-section) {
   max-width: 480px;
+}
+
+.modal-card:has(.gold-pick) {
+  max-width: 720px;
+}
+
+.gold-pick-lead {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.gold-pick-empty {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+.gold-pick-group + .gold-pick-group {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--card-border);
+}
+
+.gold-pick-list {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.gold-pick-band + .gold-pick-band {
+  margin-top: 14px;
+}
+
+.gold-pick-band-title {
+  display: inline-block;
+  margin: 0 0 8px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.gold-pick-band-lower {
+  color: var(--warn);
+  background: rgba(246, 196, 84, 0.16);
+}
+
+.gold-pick-band-fair {
+  color: var(--accent);
+  background: rgba(79, 140, 255, 0.16);
+}
+
+.gold-pick-table-wrap {
+  overflow-x: auto;
+}
+
+.gold-pick-table th:nth-child(2),
+.gold-pick-table td.gold-pick-name {
+  text-align: left;
+}
+
+.gold-pick-stock {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: var(--accent);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.gold-pick-stock:hover {
+  text-decoration: underline;
+}
+
+.gold-pick-year {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 500;
 }
 
 .analysis-section + .analysis-section {
@@ -3043,6 +3662,10 @@ footer {
   font-weight: 600;
 }
 
+.chip-people {
+  font-variant-numeric: tabular-nums;
+}
+
 .chip-wow .up {
   color: var(--up);
   font-weight: 600;
@@ -3062,4 +3685,325 @@ footer {
   font-size: 11px;
   color: var(--text-dim);
   line-height: 1.5;
+}
+
+/* ===== 股票庫存 ===== */
+.holdings-workspace {
+  margin-top: 0;
+  padding-top: 8px;
+}
+
+.holdings-account-bar,
+.holdings-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.holdings-account-bar {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--card-border);
+}
+
+.holdings-field-account {
+  flex: 2 1 220px;
+}
+
+.holdings-field-new-account {
+  flex: 1 1 160px;
+}
+
+.holdings-account-bar-pnl {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 140px;
+  margin: 0;
+}
+
+.holdings-account-bar-pnl > span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.holdings-account-bar-pnl strong {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  line-height: 48px;
+  min-height: 48px;
+}
+
+.holdings-account-remove {
+  background: var(--bg-soft);
+  color: var(--text);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  min-height: 48px;
+  min-width: 48px;
+  padding: 0 16px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.holdings-account-remove:hover:not(:disabled) {
+  border-color: var(--text-dim);
+}
+
+.holdings-account-remove:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.holdings-field-select {
+  flex: 1 1 160px;
+}
+
+.holdings-account-bar .holdings-field-account {
+  flex: 2 1 260px;
+}
+
+.holdings-field select {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  color: var(--text);
+  padding: 0 14px;
+  border-radius: 0;
+  font-size: 15px;
+  outline: none;
+  min-height: 48px;
+  width: 100%;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.holdings-field select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.18);
+}
+
+.holdings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 120px;
+  flex: 1 1 140px;
+}
+
+.holdings-field-query {
+  flex: 2 1 220px;
+}
+
+.holdings-field span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.holdings-field input {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  color: var(--text);
+  padding: 0 14px;
+  border-radius: 0;
+  font-size: 15px;
+  outline: none;
+  min-height: 48px;
+  width: 100%;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.holdings-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.18);
+}
+
+.holdings-add {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  min-height: 48px;
+  min-width: 48px;
+  padding: 0 16px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: filter 0.15s, transform 0.05s;
+}
+
+.holdings-add:hover {
+  filter: brightness(1.08);
+}
+
+.holdings-add:active {
+  transform: translateY(1px);
+}
+
+.holdings-add:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.holdings-msg {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.holdings-msg-dim {
+  margin-top: 8px;
+}
+
+.holdings-empty {
+  margin: 24px 0;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+.holdings-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.holdings-table {
+  margin: 0;
+}
+
+.holdings-table th:nth-child(2),
+.holdings-table td.holdings-name {
+  text-align: left;
+}
+
+.holdings-sort {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.holdings-table th:not(.holdings-th-sortable-left) .holdings-sort {
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.holdings-sort:hover,
+.holdings-sort.active {
+  color: var(--accent);
+}
+
+.holdings-sort-ind {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.holdings-table td.holdings-pnl {
+  white-space: nowrap;
+}
+
+.holdings-table td.holdings-actions,
+.holdings-table th:last-child {
+  text-align: right;
+  width: 1%;
+  white-space: nowrap;
+}
+
+.holdings-remove {
+  background: none;
+  border: 1px solid var(--card-border);
+  color: var(--text-dim);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.holdings-remove:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.holdings-pie {
+  margin-top: 28px;
+  padding: 20px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.holdings-pie-title {
+  margin: 0 0 16px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.holdings-pie-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 28px;
+}
+
+.holdings-pie-svg {
+  width: 220px;
+  height: 220px;
+  flex: 0 0 auto;
+}
+
+.holdings-pie-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+  flex: 1 1 220px;
+}
+
+.holdings-pie-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.holdings-pie-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.holdings-pie-legend-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.holdings-pie-legend-pct {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+@media (max-width: 720px) {
+  .holdings-add {
+    width: 100%;
+  }
 }
